@@ -93,8 +93,8 @@ All functions are zero-arg (or optional simple param like type), fire-and-forget
   - Base calls (jump, collect, death, portal, land) = identical synthesis + pitches across ALL files.
   - Theme only: slight detune, filter cutoff, or 1-2 note substitution in arpeggio/chime (lava: warmer 3rd; ice: higher + more detune; void: pure + glassy reverb sim via longer decay).
   - Random micro-variation (±2-5% freq or 5-10ms dur) on every play for liveliness, seeded from frame or Math.random() but same "family."
-- **No music beds or loops** — pure event-driven SFX only. The "music" is the child's imagination + canvas visuals.
-- **Performance**: Web Audio is cheap here. Create nodes per call (no pooling needed for <20 simultaneous expected). Disconnect after stop.
+- **Music beds**: looping WAV files under `assets/audio/`, named `L#-BG.wav`. Wired on Level 1 (`L1-BG.wav`) and Level 2 (`L2-BG.wav`); later worlds follow the same helper when files exist. Beds sit under SFX (`bgmVol = 0.14`), start on the first click or keypress, loop without restarting on death, pause when the tab is hidden, and follow **M** mute. Do not fade the files in/out — looping is `audio.loop = true`.
+- **Performance**: Web Audio is cheap here. Create nodes per call (no pooling needed for <20 simultaneous expected). Disconnect after stop. BGM uses a single `HTMLAudioElement` per page, not the SFX graph.
 
 ---
 
@@ -321,7 +321,8 @@ function toggleMute() {
   }
   ```
 - Place AFTER the Space check but before or after R check for consistency.
-- All four files MUST have the exact same key listener pattern for 'm'/'M'.
+- All level files MUST have the exact same key listener pattern for 'm'/'M'.
+- `toggleMute()` must also pause/resume the looping bed when one is present.
 - No per-level mute vars. Global (file-scoped) is fine since separate pages.
 
 ---
@@ -336,7 +337,7 @@ function toggleMute() {
 - Volumes and masterVol identical.
 - When adding SFX, insert at the **exact same relative code location** in each file (e.g. immediately after `player.vy = -11.8;` for jump; immediately before `neonOrbs.splice(i, 1);` for collect; immediately at `gameState = 'over';` lines).
 - For future agents: if a level-specific action has no canonical call yet, propose addition here first and use a descriptive name following the pattern (playXXX).
-- Never introduce new AudioContext or external files. Stick to this Web Audio snippet only.
+- SFX stay on this Web Audio snippet (one `AudioContext` per page). Looping beds are the exception: one `HTMLAudioElement` pointing at `assets/audio/L#-BG.wav`. Do not decode the WAV into the SFX graph.
 
 ---
 

@@ -99,6 +99,10 @@
     let audioCtx;
     let muted = false;
     const masterVol = 0.22;
+    const BGM_SRC = 'assets/audio/L2-BG.wav';
+    const bgmVol = 0.14;
+    let bgm = null;
+    let bgmWanted = false;
     let wasAirborne = true;
 
     function getAudioCtx() {
@@ -297,8 +301,33 @@
       playTone(175, 68, 'sine', 0.09, 6, 55); // low deny but dreamy
     }
 
+    function ensureBgm() {
+      if (!bgm) {
+        bgm = new Audio(BGM_SRC);
+        bgm.loop = true;
+        bgm.preload = 'auto';
+        bgm.volume = bgmVol;
+      }
+      bgm.muted = muted;
+      bgm.volume = bgmVol;
+      return bgm;
+    }
+
+    function startBgm() {
+      bgmWanted = true;
+      const a = ensureBgm();
+      if (muted || document.hidden) return;
+      const play = a.play();
+      if (play && play.catch) play.catch(() => {});
+    }
+
     function toggleMute() {
       muted = !muted;
+      if (bgm) {
+        bgm.muted = muted;
+        if (muted) bgm.pause();
+        else if (bgmWanted) startBgm();
+      }
       console.log('[NEON DASH] Sound ' + (muted ? 'muted' : 'enabled'));
     }
 
@@ -3088,6 +3117,7 @@
 
     function startPlaying() {
       getAudioCtx();
+      startBgm();
       if (gameState === 'start') {
         gameState = 'playing';
       } else if (gameState === 'over' || gameState === 'complete') {
@@ -3116,11 +3146,18 @@
       initStars();
       resetGame();
       updateNextLevelLinkVisibility();
+      ensureBgm();
+      document.addEventListener('visibilitychange', () => {
+        if (!bgm) return;
+        if (document.hidden) bgm.pause();
+        else if (bgmWanted && !muted) startBgm();
+      });
 
       // keyboard
       window.addEventListener('keydown', (e) => {
         keys[e.key] = true;
         getAudioCtx();
+        startBgm();
 
         if (e.key === ' ' || e.key === 'Spacebar') {
           e.preventDefault();
