@@ -53,7 +53,7 @@ const spriteFiles = [
   'portal-void.png', 'portal-industrial.png', 'portal-lava.png', 'portal-pink.png', 'portal-water.png',
   'portal-void-01.png', 'portal-void-08.png', 'portal-lava-01.png', 'portal-pink-01.png', 'portal-water-01.png', 'portal-industrial-01.png',
   'blob.png', 'blob-lava.png', 'blob-pink.png', 'blob-water.png',
-  'ptero.png', 'drone.png', 'octopoop.png', 'boss.png', 'bubble.png',
+  'ptero.png', 'drone.png', 'octopoop.png', 'boss.png', 'boss-laser.png', 'boss-eye-beam.png', 'bubble.png',
   'sky-void.jpg', 'sky-octo.jpg', 'sky-industrial.jpg', 'sky-lava.jpg', 'sky-pink.jpg', 'sky-water.jpg',
   'plat-void.png', 'plat-octo.png', 'plat-industrial.png', 'plat-lava.png', 'plat-pink.png', 'plat-water.png',
   'boss-01.png', 'boss-08.png',

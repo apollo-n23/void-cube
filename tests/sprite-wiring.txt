@@ -120,6 +120,8 @@ PASS exists assets/neon/ptero.png
 PASS exists assets/neon/drone.png
 PASS exists assets/neon/octopoop.png
 PASS exists assets/neon/boss.png
+PASS exists assets/neon/boss-laser.png
+PASS exists assets/neon/boss-eye-beam.png
 PASS exists assets/neon/bubble.png
 PASS exists assets/neon/sky-void.jpg
 PASS exists assets/neon/sky-octo.jpg

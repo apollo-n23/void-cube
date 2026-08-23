@@ -56,7 +56,11 @@
     load('fluid-acid', 'fluid-acid.png');
     load('npc', (t.npc) ? t.npc : 'octopoop.png');
     if (t.ptero) load('ptero', t.ptero);
-    if (t.boss) load('boss', t.boss);
+    if (t.boss) {
+      load('boss', t.boss);
+      load('bossLaser', 'boss-laser.png');
+      load('bossEyeBeam', 'boss-eye-beam.png');
+    }
     if (t.bubble) load('bubble', t.bubble);
     if (t.build) load('build', t.build);
     if (t.pyramid) load('pyramid', t.pyramid);
@@ -113,9 +117,14 @@
     return true;
   }
 
-  function drawBoss(ctx, x, y, w, h, frame) {
-    var idx = (Math.floor(frame / 5) % 8) + 1;
-    var img = images['boss' + idx] || images.boss;
+  function drawBoss(ctx, x, y, w, h, frame, pose) {
+    var img;
+    if (pose === 'laser') {
+      img = images.bossLaser || images.boss;
+    } else {
+      var idx = (Math.floor(Math.abs(frame)) % 8) + 1;
+      img = images['boss' + idx] || images.boss;
+    }
     if (!img || !img.complete || !img.naturalWidth) return false;
     ctx.drawImage(img, x, y, w, h);
     return true;

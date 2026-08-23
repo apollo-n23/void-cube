@@ -8,7 +8,7 @@
 </head>
 <body>
   <div class="header">
-    <a href="index.html" class="back-link">← RETURN TO PROMPT MATRIX</a>
+    <a href="index.html" class="back-link">← HOME</a>
     <div class="page-title">NEON DASH LEVEL 4 <span>ROCK &amp; LAVA • SIDE-SCROLL SIM</span></div>
   </div>
 
@@ -48,6 +48,14 @@
     const W = canvas.width;
     const H = canvas.height;
     const GROUND_Y = 418;
+    const BOSS_W = 105; // 62 * 1.7
+    const BOSS_H = 122; // 72 * 1.7
+    const BOSS_LASER_EVERY = 600; // ~10s at 60fps
+    const BOSS_LASER_WINDUP = 78;
+    const BOSS_LASER_HOLD = 52;
+    const BOSS_LASER_TOP = GROUND_Y - 44;
+    const BOSS_LASER_BOT = GROUND_Y - 14;
+    const BOSS_LASER_REACH = 540;
 
     let player = { wx: 90, y: 0, vx: 0, vy: 0, w: 26, h: 26 };
     let obstacles = [];
@@ -650,7 +658,7 @@
 
       // === ACTIVE END BOSS PHYSICS + AI (bouncing foreground boss; only while active) ===
       // Simple platformer physics + chase player + ground bounce. Parallax 1.0 handled in draw (full scrollX).
-      // Boss behaviors/AI/movement/sounds/particles 100% preserved. NEW RULE (boss fight only): the ONLY way to die while endBoss && !bossDefeated && gameState==='playing' (inBossFight) is if boss lands directly on top and crushes (see END BOSS COLLISIONS). All lava, darts, projectiles, enemy hits, boss side-taps suppressed (see guarded death paths).
+      // Boss fight deaths: crush (lands on player) OR the horizontal eye-laser. Other hazards stay non-lethal during the fight.
       if (endBoss && !bossDefeated && gameState === 'playing') {
         const gravity = 0.52;
         endBoss.vy += gravity;
@@ -667,7 +675,7 @@
               const ang = Math.random() * Math.PI * 2;
               const sp = 0.9 + Math.random() * 2.8;
               particles.push({
-                x: endBoss.wx + 15 + Math.random() * 32,
+                x: endBoss.wx + (Math.random() - 0.3) * (endBoss.w || BOSS_W),
                 y: endBoss.y + 6,
                 vx: (Math.random() - 0.5) * sp * 1.6,
                 vy: -0.8 - Math.random() * 1.6,
@@ -688,9 +696,58 @@
         targetSpeed += Math.sin(frame * 0.095 + (endBoss.wx * 0.02)) * 0.55;
         endBoss.vx = endBoss.vx * 0.65 + targetSpeed * 0.35;
         endBoss.wx += endBoss.vx;
+        if (Math.abs(endBoss.vx) > 0.35 || Math.abs(endBoss.vy) > 0.5) {
+          endBoss.step = (endBoss.step || 0) + Math.max(0.12, Math.abs(endBoss.vx) * 0.32);
+        }
 
         // keep roughly in view / reasonable chase range (avoid too far left of player during fight)
         if (endBoss.wx < player.wx - 280) endBoss.wx = player.wx - 280;
+
+        // Eye lasers: telegraph, then a waist-high horizontal beam the player must jump or platform over
+        if (!endBoss.laserPhase) endBoss.laserPhase = 'idle';
+        if (endBoss.laserPhase === 'idle' && frame - (endBoss.lastLaser || 0) >= BOSS_LASER_EVERY) {
+          endBoss.laserPhase = 'windup';
+          endBoss.laserStart = frame;
+        } else if (endBoss.laserPhase === 'windup' && frame - endBoss.laserStart >= BOSS_LASER_WINDUP) {
+          endBoss.laserPhase = 'beam';
+          endBoss.laserStart = frame;
+          playLaser();
+        } else if (endBoss.laserPhase === 'beam' && frame - endBoss.laserStart >= BOSS_LASER_HOLD) {
+          endBoss.laserPhase = 'idle';
+          endBoss.lastLaser = frame;
+        }
+
+        if (endBoss.laserPhase === 'beam') {
+          const pLeft = player.wx;
+          const pRight = player.wx + player.w;
+          const pTop = player.y;
+          const pBottom = player.y + player.h;
+          const lLeft = endBoss.wx - BOSS_LASER_REACH;
+          const lRight = endBoss.wx + BOSS_LASER_REACH;
+          if (pRight > lLeft && pLeft < lRight && pBottom > BOSS_LASER_TOP && pTop < BOSS_LASER_BOT) {
+            const now = frame;
+            if (now < player.invulnUntil) {
+              // post-stomp / shield grace
+            } else if (player.hasShield) {
+              player.hasShield = false;
+              playShieldPop();
+              player.invulnUntil = now + 300;
+              for (let k = 0; k < 16; k++) {
+                const ang = Math.random() * Math.PI * 2;
+                const sp = 1.5 + Math.random() * 2.8;
+                particles.push({
+                  x: player.wx + 13, y: player.y + 13,
+                  vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 0.6,
+                  life: 22 + Math.random() * 14, c: '#66ddff', size: 1.8
+                });
+              }
+            } else {
+              gameState = 'over';
+              playDeath('projectile');
+              spawnExplosion(player.wx + player.w / 2, player.y + player.h / 2);
+            }
+          }
+        }
       }
 
       // clamp left bound
@@ -1662,10 +1719,12 @@
       // CRITICAL NEW RULE (while inBossFight): stomp path (exactly 3 stomps -> bossDefeated, victory particles, endBoss=null, ladder spawn+cleanup) 100% unchanged and only win path.
       // The crush death path below is now the SOLE way player dies in boss fight (direct land on top). Refined isCrush slightly for "lands directly on top"; side non-crush overlaps are now survivable (no death).
       if (endBoss && !bossDefeated && gameState === 'playing') {
-        const bLeft = endBoss.wx - 8;
-        const bRight = endBoss.wx + 55;
-        const bTop = endBoss.y - 85;   // approx drawn top (body/spikes)
-        const bBottom = endBoss.y + 5; // feet area
+        const bw = endBoss.w || BOSS_W;
+        const bh = endBoss.h || BOSS_H;
+        const bLeft = endBoss.wx - bw * 0.5;
+        const bRight = endBoss.wx + bw * 0.5;
+        const bTop = endBoss.y - bh;
+        const bBottom = endBoss.y + 5;
         const pLeft = player.wx;
         const pRight = player.wx + player.w;
         const pTop = player.y;
@@ -1698,7 +1757,7 @@
 
             if (endBoss.stomps < 3) {
               // Bounce player to safe distance left, brief invuln flash, boss knocked back
-              player.wx = endBoss.wx - 62;
+              player.wx = endBoss.wx - (endBoss.w || BOSS_W) * 0.5 - 28;
               player.vx = -4.2;
               player.invulnUntil = frame + 18; // short post-stomp protection
               endBoss.vx = -3.5;
@@ -2033,10 +2092,16 @@
             vy: -10,  // initial jump-in arc from right
             vx: -2.8,  // initial leftward velocity so boss always enters from extreme right
             stomps: 0,
-            w: 62,
-            h: 72,
+            w: BOSS_W,
+            h: BOSS_H,
+            step: 0,
+            laserPhase: 'idle',
+            lastLaser: frame,
             lastBounce: frame - 200  // allow initial bounce-in
           };
+          platforms.push({ wx: player.wx - 30, y: GROUND_Y - 96, width: 74, height: 8 });
+          platforms.push({ wx: player.wx + 110, y: GROUND_Y - 96, width: 74, height: 8 });
+          platforms.push({ wx: player.wx + 230, y: GROUND_Y - 138, width: 68, height: 8 });
         }
         // Only spawn the actual ladder+portal *after* boss defeated
         if (bossDefeated) {
@@ -3122,9 +3187,11 @@
       if (endBoss && !bossDefeated) {
         const bx = endBoss.wx - scrollX;
         const by = endBoss.y;
-        const bodyW = endBoss.w || 62;
-        const bodyH = endBoss.h || 72;
-        if (!(window.NeonDashSprites && NeonDashSprites.drawBoss(ctx, bx - bodyW / 2, by - bodyH, bodyW, bodyH, frame))) {
+        const bodyW = endBoss.w || BOSS_W;
+        const bodyH = endBoss.h || BOSS_H;
+        const bossPose = (endBoss.laserPhase === 'windup' || endBoss.laserPhase === 'beam') ? 'laser' : undefined;
+        const walkClock = endBoss.step || 0;
+        if (!(window.NeonDashSprites && NeonDashSprites.drawBoss(ctx, bx - bodyW / 2, by - bodyH, bodyW, bodyH, walkClock, bossPose))) {
         // Dynamic stomp anim (stronger feel); use frame + slight vy influence
         const stomp = Math.sin(frame * 0.072) * 6.5 + (endBoss.vy > 0 ? 1.5 : 0);
         const stomp2 = Math.sin(frame * 0.072 + 1.75) * 5.8;
@@ -3218,6 +3285,32 @@
         ctx.fill();
 
         ctx.restore();
+        }
+
+        // Horizontal eye lasers (windup warning + lethal beam). Jump or stand on a platform to clear the band.
+        if (endBoss.laserPhase === 'windup' || endBoss.laserPhase === 'beam') {
+          const firing = endBoss.laserPhase === 'beam';
+          const t = firing
+            ? 1
+            : Math.min(1, (frame - (endBoss.laserStart || 0)) / BOSS_LASER_WINDUP);
+          const pulse = 0.45 + 0.55 * Math.abs(Math.sin(frame * (firing ? 0.55 : 0.22)));
+          const bandY = (BOSS_LASER_TOP + BOSS_LASER_BOT) * 0.5;
+          const bandH = firing ? (BOSS_LASER_BOT - BOSS_LASER_TOP) : 10 + t * 12;
+          const beamW = BOSS_LASER_REACH;
+          const sx0 = (endBoss.wx - scrollX);
+          ctx.save();
+          ctx.globalAlpha = firing ? (0.72 + 0.22 * pulse) : (0.18 + 0.28 * t * pulse);
+          if (!(window.NeonDashSprites && NeonDashSprites.drawSprite(ctx, 'bossEyeBeam', sx0 + 18, bandY - bandH * 0.5, beamW, bandH))) {
+            ctx.fillStyle = firing ? 'rgba(180, 255, 255, 0.85)' : 'rgba(120, 220, 255, 0.55)';
+            ctx.fillRect(sx0 + 16, bandY - bandH * 0.5, beamW, bandH);
+          }
+          ctx.translate(sx0 - 18, bandY);
+          ctx.scale(-1, 1);
+          if (!(window.NeonDashSprites && NeonDashSprites.drawSprite(ctx, 'bossEyeBeam', 0, -bandH * 0.5, beamW, bandH))) {
+            ctx.fillStyle = firing ? 'rgba(180, 255, 255, 0.85)' : 'rgba(120, 220, 255, 0.55)';
+            ctx.fillRect(0, -bandH * 0.5, beamW, bandH);
+          }
+          ctx.restore();
         }
       }
 
