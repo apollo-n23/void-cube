@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Void Cube</title>
+  <link rel="stylesheet" href="assets/neon/chrome.css">
+  <style>
+    body {
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(1, 4, 9, 0.22) 0%, rgba(1, 4, 9, 0.55) 48%, rgba(1, 4, 9, 0.88) 100%),
+        url("assets/neon/sky-void.jpg") center top / cover no-repeat fixed,
+        #010409;
+    }
+
+    .hub-header.header {
+      justify-content: center;
+      margin-top: 28px;
+    }
+
+    .hub-header .page-title {
+      font-size: 22px;
+      letter-spacing: 8px;
+    }
+
+    .hub-lede {
+      max-width: 960px;
+      margin: 14px auto 0;
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: 2.4px;
+      text-transform: uppercase;
+      color: #ff8ae8;
+      text-shadow: 0 0 10px rgba(255, 106, 224, 0.4);
+    }
+
+    .hub-cta {
+      text-align: center;
+      margin: 28px auto 8px;
+    }
+
+    .worlds {
+      max-width: 960px;
+      margin: 22px auto 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .world {
+      position: relative;
+      display: block;
+      min-height: 128px;
+      overflow: hidden;
+      text-decoration: none;
+      color: #e8fbff;
+      border: 1px solid rgba(92, 232, 255, 0.28);
+      box-shadow: 0 0 0 1px rgba(4, 16, 24, 0.8), 0 0 18px rgba(0, 190, 255, 0.16);
+      background: #041018;
+    }
+
+    .world img {
+      display: block;
+      width: 100%;
+      height: 128px;
+      object-fit: cover;
+      filter: saturate(1.05) contrast(1.05);
+    }
+
+    .world-plate {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px 12px;
+      background-color: #041018;
+      background-image: url("assets/neon/ui-btn.jpg");
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: 140% 220%;
+    }
+
+    .world-id {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+      color: #9be8ff;
+      text-shadow: 0 0 8px rgba(92, 232, 255, 0.5);
+    }
+
+    .world-name {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.1px;
+      text-transform: uppercase;
+      color: #ffd6f5;
+      text-shadow: 0 0 8px rgba(255, 106, 224, 0.45);
+    }
+
+    .world:hover {
+      border-color: rgba(255, 106, 224, 0.55);
+      box-shadow: 0 0 22px rgba(255, 106, 224, 0.22);
+    }
+
+    .world:hover img {
+      filter: brightness(1.12) saturate(1.15);
+    }
+
+    .hub-note {
+      margin-top: 18px;
+    }
+
+    @media (max-width: 720px) {
+      .worlds { grid-template-columns: 1fr 1fr; }
+      .hub-header .page-title { font-size: 16px; letter-spacing: 4px; }
+    }
+
+    @media (max-width: 460px) {
+      .worlds { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header hub-header">
+    <div class="page-title">VOID CUBE <span>NEON DASH • SIX-LEVEL RUN</span></div>
+  </div>
+
+  <p class="hub-lede">Gravity cube. Neon orbs. Six worlds. Climb the ladder out.</p>
+
+  <div class="hub-cta">
+    <a class="chrome-cta" href="void-cube.html">PLAY LEVEL 1</a>
+  </div>
+
+  <nav class="worlds" aria-label="Level select">
+    <a class="world" href="void-cube.html">
+      <img src="assets/neon/sky-void.jpg" alt="">
+      <span class="world-plate"><span class="world-id">L1</span><span class="world-name">Void</span></span>
+    </a>
+    <a class="world" href="level2.html">
+      <img src="assets/neon/sky-octo.jpg" alt="">
+      <span class="world-plate"><span class="world-id">L2</span><span class="world-name">Mr Octopoop</span></span>
+    </a>
+    <a class="world" href="Level3.html">
+      <img src="assets/neon/sky-industrial.jpg" alt="">
+      <span class="world-plate"><span class="world-id">L3</span><span class="world-name">Industrial</span></span>
+    </a>
+    <a class="world" href="Level4.html">
+      <img src="assets/neon/sky-lava.jpg" alt="">
+      <span class="world-plate"><span class="world-id">L4</span><span class="world-name">Lava</span></span>
+    </a>
+    <a class="world" href="Leve5.html">
+      <img src="assets/neon/sky-pink.jpg" alt="">
+      <span class="world-plate"><span class="world-id">L5</span><span class="world-name">Pink biosphere</span></span>
+    </a>
+    <a class="world" href="Level6.html">
+      <img src="assets/neon/sky-water.jpg" alt="">
+      <span class="world-plate"><span class="world-id">L6</span><span class="world-name">Deep water</span></span>
+    </a>
+  </nav>
+
+  <div class="info hub-note">
+    <kbd>&larr;</kbd> <kbd>&rarr;</kbd> MOVE &nbsp; <kbd>SPACE</kbd> JUMP &nbsp; <kbd>&darr;</kbd> ICE &nbsp; <kbd>M</kbd> MUTE &nbsp; <kbd>R</kbd> RESET
+  </div>
+</body>
+</html>

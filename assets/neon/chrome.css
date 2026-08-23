@@ -1,0 +1,233 @@
+/* Neon Dash page chrome — Imagine plates, HTML/CSS labels (no baked lettering). */
+
+:root {
+  --nd-cyan: #5ce8ff;
+  --nd-pink: #ff6ae0;
+  --nd-text: #d4f4ff;
+  --nd-muted: #7aa8c0;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background:
+    radial-gradient(ellipse at 50% -10%, #0c2238 0%, #03070d 52%, #010409 100%);
+  color: var(--nd-text);
+  font-family: "Segoe UI", "Arial", "Helvetica Neue", sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  padding-bottom: 32px;
+}
+
+.header {
+  max-width: 960px;
+  margin: 16px auto 10px;
+  padding: 14px 18px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 76px;
+  background-color: #041018;
+  background-image: url("ui-header.jpg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 148% 250%;
+}
+
+.back-link {
+  color: #c8f7ff;
+  text-decoration: none;
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  padding: 11px 16px;
+  white-space: nowrap;
+  background-color: transparent;
+  background-image: url("ui-btn.jpg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 135% 195%;
+  text-shadow: 0 0 8px rgba(92, 232, 255, 0.55);
+  border: 0;
+}
+
+.back-link:hover {
+  background-image: url("ui-btn-hover.jpg");
+  color: #ffffff;
+}
+
+.back-link:active {
+  background-image: url("ui-btn-pressed.jpg");
+}
+
+.page-title {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 3.5px;
+  color: #9be8ff;
+  font-weight: 700;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(92, 232, 255, 0.45);
+}
+
+.page-title span {
+  color: #ff8ae8;
+  font-weight: 400;
+}
+
+.game-stage {
+  position: relative;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.game-stage::before,
+.game-stage::after {
+  content: "";
+  position: absolute;
+  width: 96px;
+  height: 64px;
+  pointer-events: none;
+  background-image: url("ui-frame.jpg");
+  background-repeat: no-repeat;
+  background-size: 220%;
+  background-position: top right;
+  mix-blend-mode: screen;
+  opacity: 0.88;
+  z-index: 2;
+}
+
+.game-stage::before {
+  top: -6px;
+  right: -6px;
+}
+
+.game-stage::after {
+  bottom: -6px;
+  left: -6px;
+  transform: rotate(180deg);
+}
+
+canvas#game {
+  display: block;
+  margin: 0 auto;
+  border: 1px solid #1a5574;
+  box-shadow:
+    0 0 0 1px rgba(92, 232, 255, 0.25),
+    0 0 28px rgba(0, 190, 255, 0.28);
+  background: #000;
+  image-rendering: pixelated;
+}
+
+.level-nav {
+  max-width: 960px;
+  margin: 10px auto 0;
+  padding: 20px 22px 18px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 6px;
+  background-color: #041018;
+  background-image: url("ui-nav.jpg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 122% 230%;
+}
+
+.level-nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 118px;
+  height: 42px;
+  padding: 0 12px;
+  color: #c8f4ff;
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.15px;
+  text-transform: uppercase;
+  background-image: url("ui-btn.jpg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 140% 210%;
+  text-shadow: 0 0 8px rgba(92, 232, 255, 0.45);
+}
+
+.level-nav-link:hover {
+  background-image: url("ui-btn-hover.jpg");
+  color: #ffffff;
+}
+
+.level-nav-link:active {
+  background-image: url("ui-btn-pressed.jpg");
+}
+
+.level-nav-link.is-current {
+  color: #ffd6f5;
+  background-image: url("ui-btn-hover.jpg");
+  text-shadow: 0 0 10px rgba(255, 106, 224, 0.65);
+}
+
+.info {
+  max-width: 960px;
+  margin: 12px auto 8px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--nd-muted);
+  letter-spacing: 1px;
+}
+
+.info kbd {
+  font-family: "Consolas", monospace;
+  display: inline-block;
+  min-width: 28px;
+  padding: 5px 8px;
+  margin: 0 2px;
+  color: #e8fbff;
+  background-color: #061018;
+  background-image: url("ui-key.jpg");
+  background-position: center 42%;
+  background-repeat: no-repeat;
+  background-size: 240%;
+  border: 1px solid rgba(92, 232, 255, 0.35);
+  border-radius: 4px;
+  text-shadow: 0 0 6px rgba(92, 232, 255, 0.65);
+}
+
+.chrome-complete {
+  text-align: center;
+  margin-top: 10px;
+}
+
+a.chrome-cta,
+#level2-link,
+#next-level-link,
+#level3-link {
+  display: inline-block;
+  color: #e8fbff;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  padding: 16px 40px;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  background-image: url("ui-cta.jpg");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 135% 210%;
+  text-shadow: 0 0 10px rgba(255, 106, 224, 0.5);
+  transition: filter 0.12s ease, color 0.12s ease;
+}
+
+a.chrome-cta:hover,
+#level2-link:hover,
+#next-level-link:hover,
+#level3-link:hover {
+  filter: brightness(1.18);
+  color: #ffffff;
+}

@@ -1,0 +1,2348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEON DASH // LCARS 4.7</title>
+  <link rel="stylesheet" href="assets/neon/chrome.css">
+</head>
+<body>
+  <div class="header">
+    <a href="index.html" class="back-link">← RETURN TO PROMPT MATRIX</a>
+    <div class="page-title">NEON DASH PROTOCOL <span>774 • SIDE-SCROLL SIM</span></div>
+  </div>
+
+  <div class="game-stage">
+    <canvas id="game" width="960" height="520"></canvas>
+  </div>
+
+  <nav class="level-nav" aria-label="Level select">
+    <a class="level-nav-link is-current" href="void-cube.html">L1 Void</a>
+    <a class="level-nav-link" href="level2.html">L2 Octo</a>
+    <a class="level-nav-link" href="Level3.html">L3 Forge</a>
+    <a class="level-nav-link" href="Level4.html">L4 Lava</a>
+    <a class="level-nav-link" href="Leve5.html">L5 Flora</a>
+    <a class="level-nav-link" href="Level6.html">L6 Deep</a>
+  </nav>
+
+  <div class="info">
+    <kbd>←</kbd> <kbd>→</kbd> MOVE CUBE &nbsp;&nbsp; <kbd>SPACE</kbd> JUMP HAZARDS &amp; PLATFORMS &nbsp;&nbsp; <kbd>R</kbd> RESTART
+  </div>
+
+  <!-- Level 2 Link - only visible on Level Complete screen -->
+  <div id="level2-link-container" class="chrome-complete" style="display: none;">
+    <a id="level2-link" class="chrome-cta" href="level2.html">→ PLAY LEVEL 2</a>
+  </div>
+
+  <script src="assets/neon/draw-sprites.js"></script>
+  <script>
+    if (window.NeonDashSprites) NeonDashSprites.theme('void');
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d', { alpha: true });
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const GROUND_Y = 418;
+
+    let player = { wx: 90, y: 0, vx: 0, vy: 0, w: 26, h: 26 };
+    let obstacles = [];
+    let particles = [];
+    let stars = [];
+    let scrollX = 0;
+    let score = 0;
+    let best = 0;
+    let gameState = 'start'; // 'start' | 'playing' | 'over'
+    let lastSpawnWX = 280;
+    let frame = 0;
+    let jumpCount = 0;
+
+    // New: floating platforms and special chaser enemies
+    let platforms = [];
+    let specials = [];
+    let backgroundElements = [];
+    let flyingShips = [];
+    let projectiles = [];
+    let levelExit = null;
+    let powerUp = null;
+    let lowWalls = [];
+    let trampolines = [];
+    let endFireballs = [];
+    let neonOrbs = [];
+    let neonScore = 0;
+    let neonAtLevelStart = 0;  // cumulative neon loaded at init; restored on retry
+    let baseScore = 0;  // cumulative distance from prior run segment (usually 0 on L1)
+    let shieldSpawnIndex = 0;
+    let lastWallWX = 280;
+    let lastTrampolineWX = 200;
+    let lastPlatWX = 280;
+    let lastSpecialFrame = 0;
+    let lastOrbSpawn = 0;
+    let lastGreenOrbSpawn = 0;
+    let firstShieldTutorialActive = false;
+    let wasAirborne = true;
+
+    const keys = {};
+
+    // === NEON DASH DREAMY SFX ENGINE (shared across all levels) ===
+    // Aligned per final overseer for continuity (9yo sci-fi daydream universe)
+    let audioCtx;
+    let muted = false;
+    const masterVol = 0.22;
+
+    function getAudioCtx() {
+      if (!audioCtx) {
+        try {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) { /* silent fail on old browsers */ }
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+      return audioCtx;
+    }
+
+    function playTone(freq, durationMs, type = 'sine', vol = 0.2, attackMs = 8, decayMs = 80) {
+      const ctx = getAudioCtx();
+      if (!ctx || muted) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      osc.type = type;
+      osc.frequency.value = freq;
+
+      filter.type = 'lowpass';
+      filter.frequency.value = Math.min(2800, freq * 3.5 + 400);
+
+      const now = ctx.currentTime;
+      const dur = durationMs / 1000;
+
+      gain.gain.value = 0;
+      gain.gain.linearRampToValueAtTime(vol * masterVol, now + (attackMs / 1000));
+      gain.gain.linearRampToValueAtTime(0.0001, now + dur + 0.08);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + dur + 0.15);
+    }
+
+    function playNoise(durationMs, vol = 0.15, filterHz = 1200, type = 'lowpass') {
+      const ctx = getAudioCtx();
+      if (!ctx || muted) return;
+      const bufferSize = Math.floor(ctx.sampleRate * (durationMs / 1000));
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+      filter.type = type;
+      filter.frequency.value = filterHz;
+
+      const now = ctx.currentTime;
+      const dur = durationMs / 1000;
+      gain.gain.value = vol * masterVol;
+      gain.gain.linearRampToValueAtTime(0.0001, now + dur + 0.06);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      noise.start(now);
+      noise.stop(now + dur + 0.1);
+    }
+
+    // === CANONICAL WRAPPERS (use these exact calls for world continuity) ===
+    function playJump() {
+      if (muted) return;
+      playTone(620, 72, 'square', 0.18, 6, 70);
+      setTimeout(() => playTone(880, 38, 'sine', 0.09, 4, 30), 18);
+    }
+    function playTrampoline() {
+      if (muted) return;
+      playTone(780, 95, 'triangle', 0.20, 7, 90);
+      setTimeout(() => playTone(1050, 55, 'sine', 0.11, 5, 45), 22);
+    }
+    function playLand() {
+      if (muted) return;
+      playTone(280, 55, 'sine', 0.12, 5, 55);
+      playNoise(48, 0.06, 900, 'lowpass');
+    }
+    function playCollect(isGreen = false) {
+      if (muted) return;
+      const base = isGreen ? 720 : 880;
+      playTone(base, 42, 'triangle', 0.22, 3, 35);
+      setTimeout(() => playTone(base * 1.25, 42, 'triangle', 0.18, 3, 35), 28);
+      setTimeout(() => playTone(base * 1.5, 55, 'sine', 0.14, 4, 40), 55);
+      if (isGreen) {
+        setTimeout(() => playTone(base * 0.9, 60, 'sine', 0.10, 6, 50), 40);
+      }
+    }
+    function playPowerup(type = 'shield') {
+      if (muted) return;
+      const isIce = type === 'ice';
+      const notes = isIce ? [980, 1120, 1310, 1550] : [820, 980, 1150, 1380];
+      notes.forEach((f, i) => {
+        setTimeout(() => {
+          playTone(f, 65, isIce ? 'triangle' : 'sine', isIce ? 0.17 : 0.19, 5, 55);
+        }, i * 22);
+      });
+      setTimeout(() => playNoise(90, 0.07, isIce ? 2200 : 1600, 'lowpass'), 30);
+    }
+    function playLadderStep() {
+      if (muted) return;
+      playTone(920, 38, 'square', 0.09, 3, 32);
+      playNoise(32, 0.05, 1400, 'lowpass');
+    }
+    function playLadderGrab() {
+      if (muted) return;
+      playTone(410, 75, 'sine', 0.13, 8, 70);
+    }
+    function playDeath(cause = 'hazard') {
+      if (muted) return;
+      const base = (cause === 'lava' || cause === 'acid') ? 480 : (cause === 'ptero' || cause === 'ice' ? 780 : 650);
+      playTone(base, 160, 'sine', 0.16, 12, 140);
+      setTimeout(() => playTone(base * 0.75, 140, 'sine', 0.12, 10, 120), 55);
+      if (cause === 'lava' || cause === 'acid') {
+        playNoise(220, 0.07, 650, 'lowpass');
+      } else if (cause === 'ice' || cause === 'ptero') {
+        playNoise(90, 0.05, 2800, 'highpass');
+      }
+    }
+    function playPortal() {
+      if (muted) return;
+      playNoise(320, 0.09, 1800, 'lowpass');
+      const chimes = [720, 880, 1080, 1320, 1620];
+      chimes.forEach((f, i) => {
+        setTimeout(() => playTone(f, 180, 'sine', 0.15 + (i === 4 ? 0.04 : 0), 15, 160), i * 18);
+      });
+    }
+    function playIceBlast() {
+      if (muted) return;
+      [1240, 1380, 1510, 1720].forEach((f, i) => {
+        setTimeout(() => playTone(f, 95, 'triangle', 0.18, 4, 80), i * 7);
+      });
+      playNoise(75, 0.11, 2400, 'highpass');
+    }
+    function playPteroSpit() {
+      if (muted) return;
+      playTone(230, 85, 'triangle', 0.13, 10, 75);
+      playNoise(95, 0.08, 580, 'lowpass');
+    }
+    function playShieldPop() {
+      if (muted) return;
+      playTone(1050, 55, 'sine', 0.15, 4, 45);
+      setTimeout(() => playTone(720, 48, 'triangle', 0.10, 4, 38), 18);
+    }
+
+    // === NEW DREAMY SFX FOR CONSISTENCY & L5 ENHANCEMENTS (soft, wondrous 9yo sci-fi per bible) ===
+    function playPyramidEmerge() {
+      if (muted) return;
+      playNoise(180, 0.09, 850, 'lowpass'); // soft ascending whoosh
+      const chimes = [510, 640, 770, 910, 1080];
+      chimes.forEach((f, i) => {
+        setTimeout(() => playTone(f, 92, 'sine', 0.13 + (i > 2 ? 0.02 : 0), 14, 85), i * 13);
+      });
+    }
+    function playPyramidChat() {
+      if (muted) return;
+      playTone(690, 105, 'sine', 0.11, 18, 95); // mysterious glassy
+      setTimeout(() => playTone(860, 82, 'triangle', 0.08, 12, 72), 48);
+    }
+    function playBuildingHum() {
+      if (muted) return;
+      playTone(92, 210, 'sine', 0.06, 22, 190); // low pulsing glow
+      setTimeout(() => playTone(138, 155, 'sine', 0.05, 18, 130), 65);
+    }
+    function playGooPop() {
+      if (muted) return;
+      playNoise(52, 0.10, 720, 'lowpass'); // wet low pop
+      playTone(295, 46, 'sine', 0.12, 5, 40);
+    }
+    function playLaser() {
+      if (muted) return;
+      playTone(1420, 36, 'square', 0.13, 3, 30); // sharp high zap, soft not harsh
+      setTimeout(() => playTone(1680, 24, 'sine', 0.08, 2, 18), 7);
+    }
+    function playNPCApproach() {
+      if (muted) return;
+      playTone(505, 62, 'sine', 0.11, 9, 52); // soft friendly ping
+      setTimeout(() => playTone(670, 48, 'triangle', 0.07, 7, 38), 24);
+    }
+    function playBlock() {
+      if (muted) return;
+      playTone(175, 68, 'sine', 0.09, 6, 55); // low deny but dreamy
+    }
+
+    function toggleMute() {
+      muted = !muted;
+      console.log('[NEON DASH] Sound ' + (muted ? 'muted' : 'enabled'));
+    }
+
+    function loadBest() {
+      try {
+        const v = localStorage.getItem('voidCubeBest');
+        if (v) best = parseInt(v, 10) || 0;
+      } catch (e) {}
+    }
+    function saveBest() {
+      try { localStorage.setItem('voidCubeBest', String(best)); } catch (e) {}
+    }
+
+    function resetGame() {
+      player = { wx: 90, y: 0, vx: 0, vy: 0, w: 26, h: 26, hasShield: false, isClimbing: false, invulnUntil: 0 };
+      obstacles = [];
+      particles = [];
+      platforms = [];
+      specials = [];
+      backgroundElements = [];
+      flyingShips = [];
+      projectiles = [];
+      levelExit = null;
+      powerUp = null;
+      lowWalls = [];
+      trampolines = [];
+      endFireballs = [];
+      neonOrbs = [];
+      neonScore = neonAtLevelStart;  // fair retry: keep neon earned before this level
+      shieldSpawnIndex = 0;
+      lastWallWX = 280;
+      lastTrampolineWX = 200;
+      lastOrbSpawn = 0;
+      lastGreenOrbSpawn = 0;
+      firstShieldTutorialActive = false;
+      scrollX = 0;
+      score = 0;
+      jumpCount = 0;
+      lastSpawnWX = 280;
+      lastPlatWX = 310;
+      lastSpecialFrame = 40;   // allow first monster to appear earlier
+      frame = 0;
+      // seed a couple early obstacles
+      obstacles.push({ wx: 340, h: 26 });
+      obstacles.push({ wx: 520, h: 33 });
+      lastSpawnWX = 520;
+      // seed one floating platform for early play
+      platforms.push({ wx: 295, y: GROUND_Y - 78, width: 62, height: 8 });
+      // seed an early monster so player can encounter one soon
+      specials.push({ wx: 680, y: GROUND_Y - 32, w: 30, h: 32, nextShot: frame + 55 + Math.random() * 40 });
+      player.y = GROUND_Y - player.h;
+
+      initBackgroundElements();
+      initFlyingShips();
+    }
+
+    function initStars() {
+      stars = [];
+      for (let i = 0; i < 190; i++) {
+        stars.push({
+          x: Math.random() * 6200 - 300,
+          y: 18 + Math.random() * 355,
+          s: Math.random() > 0.82 ? 1.6 : (Math.random() > 0.55 ? 1.1 : 0.7),
+          a: 0.06 + Math.random() * 0.18
+        });
+      }
+    }
+
+    function initBackgroundElements() {
+      // Distant repeatable sci-fi scenery: rocket pads, labs, and planets in the void
+      backgroundElements = [];
+      const spread = 12500;
+      const startX = -600;
+
+      for (let i = 0; i < 38; i++) {
+        const wx = startX + (i / 38) * spread + (Math.random() - 0.5) * 220;
+        const r = Math.random();
+
+        if (r < 0.28) {
+          // Rocket launch site (distant tower + pad)
+          backgroundElements.push({
+            type: 'rocket',
+            wx: wx,
+            y: GROUND_Y - 18 - Math.random() * 38,
+            scale: 0.65 + Math.random() * 0.55,
+            parallax: 0.065 + Math.random() * 0.025
+          });
+        } else if (r < 0.58) {
+          // Science lab / research building
+          backgroundElements.push({
+            type: 'lab',
+            wx: wx,
+            y: GROUND_Y - 12 - Math.random() * 26,
+            scale: 0.7 + Math.random() * 0.6,
+            parallax: 0.072 + Math.random() * 0.022
+          });
+        } else {
+          // Distant planet (higher in sky, slower parallax)
+          backgroundElements.push({
+            type: 'planet',
+            wx: wx + (Math.random() - 0.5) * 180,
+            y: 55 + Math.random() * 145,
+            scale: 0.55 + Math.random() * 1.35,
+            parallax: 0.028 + Math.random() * 0.018,
+            hue: Math.random() < 0.5 ? 'blue' : (Math.random() < 0.5 ? 'orange' : 'purple')
+          });
+        }
+      }
+    }
+
+    function initFlyingShips() {
+      // Busy space traffic — slow moving rocketships high in the void
+      flyingShips = [];
+      for (let i = 0; i < 9; i++) {
+        const wx = -400 + Math.random() * 4800 + i * 580;
+        flyingShips.push({
+          wx: wx,
+          y: 48 + Math.random() * 165,
+          vx: -0.65 - Math.random() * 0.85,   // slow leftward drift (traffic)
+          scale: 0.55 + Math.random() * 0.9,
+          parallax: 0.038 + Math.random() * 0.022
+        });
+      }
+    }
+
+    function spawnDust(x, y, count, leftBias) {
+      for (let i = 0; i < count; i++) {
+        const sp = 0.8 + Math.random() * 1.8;
+        particles.push({
+          x: x + (Math.random() - 0.5) * 9,
+          y: y + Math.random() * 2,
+          vx: (Math.random() - (leftBias ? 0.7 : 0.5)) * sp * 1.4,
+          vy: -0.7 - Math.random() * 1.1,
+          life: 14 + Math.random() * 11,
+          c: '#77bbdd'
+        });
+      }
+    }
+
+    function spawnExplosion(x, y) {
+      for (let i = 0; i < 32; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const sp = 1.4 + Math.random() * 3.8;
+        particles.push({
+          x: x + (Math.random() - 0.5) * 6,
+          y: y + (Math.random() - 0.5) * 6,
+          vx: Math.cos(ang) * sp,
+          vy: Math.sin(ang) * sp - 0.6,
+          life: 22 + Math.random() * 26,
+          c: (Math.random() > 0.6) ? '#ffaa66' : '#aaddff'
+        });
+      }
+    }
+
+    function spawnNeonSmoke(x, y, count) {
+      // Atmospheric glowing neon blue smoke / vapor
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: x + (Math.random() - 0.5) * 28,
+          y: y + (Math.random() - 0.5) * 14,
+          vx: (Math.random() - 0.5) * 0.7,
+          vy: -0.35 - Math.random() * 0.55,   // slow upward drift
+          life: 38 + Math.random() * 46,
+          c: '#66ddff',
+          size: 1.6 + Math.random() * 1.4
+        });
+      }
+    }
+
+    function checkCollision(p, o) {
+      const ox = o.wx;
+      const oh = o.h;
+      const triLeft = ox - 14;
+      const triRight = ox + 14;
+      const triTop = GROUND_Y - oh;
+
+      const pLeft = p.wx;
+      const pRight = p.wx + p.w;
+      const pTop = p.y;
+      const pBottom = p.y + p.h;
+
+      // x overlap
+      if (pRight < triLeft || pLeft > triRight) return false;
+
+      // if cube bottom is low enough to hit the triangle body
+      if (pBottom > triTop + 3) {
+        // rough center check for the slope area
+        const mid = (triLeft + triRight) / 2;
+        const dx = Math.abs((pLeft + pRight) / 2 - mid);
+        const allowedExtra = (oh / 2.4);
+        if (dx < 11 + allowedExtra) return true;
+      }
+      return false;
+    }
+
+    // Ground spikes (obstacles) must never sit on trampolines (x overlap + small visual pad).
+    function spikeOverlapsAnyTrampoline(spikeWX, patrolAmp) {
+      const amp = patrolAmp || 0;
+      const pad = 10;
+      const sLeft = spikeWX - 14 - amp - pad;
+      const sRight = spikeWX + 14 + amp + pad;
+      for (let t of trampolines) {
+        const tLeft = t.wx;
+        const tRight = t.wx + (t.width || 40);
+        if (sRight > tLeft && sLeft < tRight) return true;
+      }
+      return false;
+    }
+    function trampolineOverlapsAnySpike(tWX, tW) {
+      const pad = 10;
+      const tLeft = tWX - pad;
+      const tRight = tWX + tW + pad;
+      for (let o of obstacles) {
+        const amp = o.patrolAmp || 0;
+        const oLeft = o.wx - 14 - amp;
+        const oRight = o.wx + 14 + amp;
+        if (tRight > oLeft && tLeft < oRight) return true;
+      }
+      return false;
+    }
+
+    function update() {
+      if (gameState !== 'playing') return;
+
+      frame++;
+
+      // movement input with smoothing + slight auto-advance bias
+      let ax = 0;
+      if (keys['ArrowLeft'] || keys['a'] || keys['A']) ax -= 1;
+      if (keys['ArrowRight'] || keys['d'] || keys['D']) ax += 1;
+
+      player.vx = player.vx * 0.78 + ax * 5.4 * 0.22;
+
+      // gentle forward bias so the run keeps going
+      if (ax >= 0) player.vx += 0.055;
+
+      player.vx = Math.max(-3.2, Math.min(5.4, player.vx));
+      player.wx += player.vx;
+
+      // clamp left bound
+      if (player.wx < 40) {
+        player.wx = 40;
+        player.vx = Math.max(0, player.vx);
+      }
+
+      // === LOW WALL / BARRIER COLLISION (blocks movement but does not kill - must jump over) ===
+      for (let wall of lowWalls) {
+        const wallLeft = wall.wx;
+        const wallRight = wall.wx + wall.width;
+        const wallTop = GROUND_Y - wall.height;
+
+        if (player.wx + player.w > wallLeft && player.wx < wallRight) {
+          if (player.y + player.h > wallTop) {
+            // Player is too low - block horizontally
+            if (player.vx > 0) {
+              player.wx = wallLeft - player.w - 0.5;
+            } else if (player.vx < 0) {
+              player.wx = wallRight + 0.5;
+            }
+            player.vx = 0;
+          }
+        }
+      }
+
+      // === INVISIBLE BARRIER AT LEVEL END (prevents running past the ladder) ===
+      if (levelExit) {
+        const maxWX = levelExit.wx + 14;
+        if (player.wx > maxWX) {
+          player.wx = maxWX;
+          player.vx = 0;
+        }
+      }
+
+      // === VISIBLE LADDER CLIMB (executes only when triggered; ends level at portal) ===
+      if (player.isClimbing && gameState === 'playing') {
+        player.climbProgress = (player.climbProgress || 0) + 0.0198;
+        if ((frame % 7) === 0) playLadderStep();
+        const t = Math.min(1, player.climbProgress);
+
+        if (levelExit) {
+          if (player.climbStartY === undefined) player.climbStartY = player.y;
+          if (player.climbTargetY === undefined) player.climbTargetY = levelExit.baseY - 305; // tall portal (60%+ of level height)
+
+          player.y = player.climbStartY + (player.climbTargetY - player.climbStartY) * t;
+          player.wx = levelExit.wx - 4; // stick to ladder center for nice visual climb
+        }
+
+        player.vx = 0;
+        player.vy = 0;
+
+        // Keep camera smoothly following the player as they climb
+        const ctarget = player.wx - 275;
+        scrollX += (ctarget - scrollX) * 0.085;
+
+        if (t >= 1) {
+          player.isClimbing = false;
+          gameState = 'complete';
+          playPortal();
+
+          // Final portal touch burst (only ends when player reaches top)
+          const ex = player.wx + 13;
+          const ey = player.y + 8;
+          for (let i = 0; i < 24; i++) {
+            const ang = Math.random() * Math.PI * 2;
+            const sp = 0.85 + Math.random() * 2.35;
+            particles.push({
+              x: ex,
+              y: ey,
+              vx: Math.cos(ang) * sp,
+              vy: Math.sin(ang) * sp - 0.95,
+              life: 30 + Math.random() * 24,
+              c: '#66ddff',
+              size: 2.1
+            });
+          }
+        }
+        return; // skip normal gameplay (spawns, collisions, etc.) during climb sequence
+      }
+
+      // vertical physics
+      player.vy += 0.47;
+      player.y += player.vy;
+
+      // === Robust landing resolution (fixes invisible platform floating bug) ===
+      // Every frame we explicitly test "is the player currently standing on ground or any platform?"
+      let landed = false;
+      let targetY = player.y;
+
+      // Ground support
+      if (player.y + player.h >= GROUND_Y - 0.5) {
+        targetY = GROUND_Y - player.h;
+        landed = true;
+      }
+
+      // Platform support - find the highest (lowest y) surface we are on top of
+      for (let p of platforms) {
+        const platSurface = p.y - player.h;
+        const platLeft = p.wx;
+        const platRight = p.wx + p.width;
+        const pLeft = player.wx;
+        const pRight = player.wx + player.w;
+
+        // Proper x overlap + feet near or on the platform top
+        if (pRight > platLeft && pLeft < platRight) {
+          const feet = player.y + player.h;
+          if (feet >= p.y - 2 && player.y <= p.y + 5) {
+            if (platSurface < targetY) { // higher platform wins
+              targetY = platSurface;
+              landed = true;
+            }
+          }
+        }
+      }
+
+      if (landed) {
+        player.y = targetY;
+        player.vy = 0;
+      }
+
+      // === OVAL TRAMPOLINE BOOST (gives super jump just before tall walls) ===
+      for (let t of trampolines) {
+        const tLeft = t.wx;
+        const tRight = t.wx + t.width;
+        const tTop = GROUND_Y - 6;
+
+        if (player.wx + player.w > tLeft && player.wx < tRight) {
+          const feet = player.y + player.h;
+          // Only boost when landing on or crossing the trampoline from above
+          if (feet >= tTop - 2 && player.vy >= 0) {
+            player.vy = -19.5;   // Much stronger upward boost than normal jump
+            landed = true;
+            player.y = tTop - player.h - 1;
+            playTrampoline();
+            // Fun bounce particles
+            for (let i = 0; i < 7; i++) {
+              particles.push({
+                x: player.wx + 8 + (Math.random() - 0.5) * 18,
+                y: tTop,
+                vx: (Math.random() - 0.5) * 2.8,
+                vy: -1.8 - Math.random() * 1.4,
+                life: 18 + Math.random() * 12,
+                c: '#66ffdd',
+                size: 2.2
+              });
+            }
+          }
+        }
+      }
+
+      // Land sound after full landing resolution (ground + platforms + trampoline)
+      if (landed && wasAirborne) {
+        playLand();
+      }
+      wasAirborne = !landed;
+
+      // jump (only when on ground or a platform)
+      if ((keys[' '] || keys['Spacebar']) && landed && player.vy >= -0.1) {
+        player.vy = -11.8;
+        jumpCount++;
+        spawnDust(player.wx + 8, player.y + player.h + 1, 7, true);
+        playJump();
+        wasAirborne = true;
+        keys[' '] = false; // one-shot
+      }
+
+      // camera follow (smooth, with forward lead)
+      const target = player.wx - 275;
+      scrollX += (target - scrollX) * 0.085;
+
+      // === SPAWN: triangular ground hazards (spaced out more for longer level) ===
+      if (player.wx > lastSpawnWX - 280) {
+        const gap = 285 + Math.random() * 195;
+        const nextWX = lastSpawnWX + gap;
+        const oh = 20 + Math.random() * 29;
+        if (!spikeOverlapsAnyTrampoline(nextWX, 0)) {
+          obstacles.push({ wx: nextWX, h: oh });
+        }
+        lastSpawnWX = nextWX;
+      }
+
+      // === SPAWN: floating platforms (optional safe landings) - much more frequent now ===
+      if (player.wx > lastPlatWX - 260) {
+        if (Math.random() < 0.78) {
+          const platWX = lastPlatWX + 38 + Math.random() * 95;
+          const platY = GROUND_Y - (58 + Math.random() * 105);
+          // Varied lengths: mostly short/medium, occasional long ones
+          let platW = 38 + Math.random() * 48;
+          if (Math.random() < 0.22) platW = 95 + Math.random() * 85; // longer platforms sometimes
+
+          // Prevent new platforms from spawning on top of or touching the ending ladder
+          let canSpawn = true;
+          if (levelExit) {
+            const ladderCenter = levelExit.wx;
+            const platCenter = platWX + platW / 2;
+            if (Math.abs(platCenter - ladderCenter) < 100 && platY > GROUND_Y - 420) {
+              canSpawn = false;
+            }
+          }
+
+          if (canSpawn) {
+            platforms.push({ wx: platWX, y: platY, width: platW, height: 8 });
+          }
+        }
+        lastPlatWX = lastPlatWX + 145 + Math.random() * 70;
+      }
+
+      // === SPAWN: low walls / barriers (occasional - player must jump over) + trampolines ===
+      if (player.wx > lastWallWX - 420) {
+        if (Math.random() < 0.48) {
+          const wallWX = lastWallWX + 55 + Math.random() * 95;
+          // Walls are now 5x taller to be a real challenge
+          const wallH = 85 + Math.random() * 60;
+          const wallW = 16 + Math.random() * 8;
+          lowWalls.push({ wx: wallWX, height: wallH, width: wallW });
+
+          // Spawn oval trampoline just before the wall to give a big boost
+          const tWX = wallWX - 72 - Math.random() * 18;
+          const tW = 36 + Math.random() * 8;
+          if (!trampolineOverlapsAnySpike(tWX, tW)) {
+            trampolines.push({
+              wx: tWX,
+              width: tW
+            });
+          }
+        }
+        lastWallWX = lastWallWX + 320 + Math.random() * 140;
+      }
+
+      // === SPAWN: special chasing red monster (slightly increased frequency) ===
+      if (frame - lastSpecialFrame > 1380 && Math.random() < 0.039) {
+        const spawnWX = Math.max(player.wx + 360, scrollX + W + 40) + Math.random() * 160;
+        specials.push({
+          wx: spawnWX,
+          y: GROUND_Y - 32,
+          w: 30,
+          h: 32,
+          nextShot: frame + 70 + Math.random() * 70   // first shot after a short delay
+        });
+        lastSpecialFrame = frame;
+      }
+
+      // move specials toward player with lag (slow, jumpable)
+      for (let s of specials) {
+        const desired = player.wx - 6;
+        const diff = desired - s.wx;
+        if (Math.abs(diff) > 0.8) {
+          s.wx += Math.sign(diff) * 1.28; // slow lag chase
+        }
+        // keep them from going below ground visually
+        if (s.y < GROUND_Y - s.h) s.y = GROUND_Y - s.h;
+      }
+
+      // === MONSTER GUNFIRE: aimed shots at randomised slow intervals ===
+      // Monsters now fire directly toward the player's position at the moment of shooting (non-homing after fired)
+      for (let s of specials) {
+        if (typeof s.nextShot !== 'number') s.nextShot = frame + 60;
+
+        if (frame >= s.nextShot) {
+          const onScreen = (s.wx - scrollX > -60 && s.wx - scrollX < W + 60);
+          if (onScreen) {
+            // Aim directly at player center at time of firing
+            const targetX = player.wx + player.w * 0.5;
+            const targetY = player.y + player.h * 0.5;
+
+            const dx = targetX - (s.wx + 8);
+            const dy = targetY - (s.y + 13);
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+            const speed = 2.35 + Math.random() * 0.55; // fairly slow projectiles
+
+            projectiles.push({
+              wx: s.wx + 8,
+              y: s.y + 13,
+              vx: (dx / dist) * speed,
+              vy: (dy / dist) * speed,
+              life: 105 + Math.random() * 18
+            });
+            playLaser();
+          }
+          // Randomised fairly slow interval between shots (roughly 1.6s – 3.2s)
+          s.nextShot = frame + 95 + Math.random() * 95;
+        }
+      }
+
+      // Ambient glowing neon blue smoke / vapor (atmospheric)
+      if (frame % 26 === 0 && Math.random() < 0.75) {
+        const smokeBaseX = scrollX + 140 + Math.random() * (W * 0.75);
+        const smokeY = GROUND_Y - 25 - Math.random() * 155;
+        spawnNeonSmoke(smokeBaseX, smokeY, 1 + Math.random() * 2.2);
+      }
+
+      // prune old objects
+      obstacles = obstacles.filter(o => o.wx > scrollX - 90);
+      platforms = platforms.filter(p => p.wx > scrollX - 130);
+      specials = specials.filter(s => s.wx > scrollX - 140);
+      lowWalls = lowWalls.filter(w => w.wx > scrollX - 110);
+      trampolines = trampolines.filter(t => t.wx > scrollX - 140);
+      endFireballs = endFireballs.filter(f => f.wx > scrollX - 80);
+      neonOrbs = neonOrbs.filter(o => o.wx > scrollX - 90);
+
+      // Move boss fireballs (they have slight gravity feel)
+      for (let i = endFireballs.length - 1; i >= 0; i--) {
+        const fb = endFireballs[i];
+        fb.wx += fb.vx;
+        fb.y += fb.vy;
+        fb.vy += 0.035;   // gentle arc downward
+        if (fb.y > GROUND_Y - 10) endFireballs.splice(i, 1);
+      }
+
+      // Move and collect neon orbs
+      for (let i = neonOrbs.length - 1; i >= 0; i--) {
+        const orb = neonOrbs[i];
+        orb.wx += orb.vx;
+        // Gentle floating motion
+        orb.y += Math.sin(frame * 0.045 + orb.phase) * 0.35;
+
+        // Collection
+        const dx = Math.abs(player.wx + 13 - orb.wx);
+        const dy = Math.abs(player.y + 13 - orb.y);
+        if (dx < 22 && dy < 22) {
+          const value = orb.value || 1;
+          neonScore += value;
+          playCollect(value === 5);
+
+          // Collect particles - different color for green orbs
+          const particleColor = (value === 5) ? '#33ff88' : '#3355aa';
+          for (let k = 0; k < (value === 5 ? 12 : 8); k++) {
+            particles.push({
+              x: orb.wx,
+              y: orb.y,
+              vx: (Math.random() - 0.5) * 2.4,
+              vy: (Math.random() - 0.5) * 2.2 - 0.6,
+              life: 20 + Math.random() * 12,
+              c: particleColor,
+              size: 1.8
+            });
+          }
+          neonOrbs.splice(i, 1);
+          continue;
+        }
+
+        // Prune far behind
+        if (orb.wx < scrollX - 60) {
+          neonOrbs.splice(i, 1);
+        }
+      }
+
+      // Move & recycle flying background rocketships (space traffic)
+      for (let ship of flyingShips) {
+        ship.wx += ship.vx;
+        // Recycle far off left → bring new one from far right
+        if (ship.wx < scrollX - 420) {
+          ship.wx = scrollX + W + 180 + Math.random() * 620;
+          ship.y = 42 + Math.random() * 172;
+          ship.vx = -0.55 - Math.random() * 0.95;
+          ship.scale = 0.55 + Math.random() * 0.9;
+        }
+      }
+
+      // Move projectiles (slow enemy fire)
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const pr = projectiles[i];
+        pr.wx += pr.vx;
+        pr.y += pr.vy;
+        pr.life--;
+        if (pr.life <= 0) projectiles.splice(i, 1);
+      }
+
+      // particles (with special slow drift for neon smoke)
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.c === '#66ddff') {
+          // Neon blue atmospheric smoke rises slower and fades gently
+          p.vy += 0.012;
+          p.vx *= 0.995;
+        } else {
+          p.vy += 0.22;
+          p.vx *= 0.985;
+        }
+        p.life--;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+
+      // collisions with triangles
+      for (let o of obstacles) {
+        if (checkCollision(player, o)) {
+          const now = frame;
+          if (now < player.invulnUntil) {
+            // Fully protected during 5-second post-shield grace period
+          } else if (player.hasShield) {
+            // Shield absorbs exactly one hit, then pops and grants 5 seconds invulnerability
+            player.hasShield = false;
+            playShieldPop();
+            player.invulnUntil = now + 300; // 5 seconds at ~60fps
+            // Shield pop effect (neon blue)
+            for (let k = 0; k < 22; k++) {
+              const ang = Math.random() * Math.PI * 2;
+              const sp = 1.8 + Math.random() * 3.2;
+              particles.push({
+                x: player.wx + 13, y: player.y + 13,
+                vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 0.7,
+                life: 28 + Math.random() * 18, c: '#66ddff', size: 2.0
+              });
+            }
+          } else {
+            gameState = 'over';
+            playDeath('hazard');
+            spawnExplosion(player.wx + player.w / 2, player.y + player.h / 2);
+            // small floor hit dust
+            spawnDust(player.wx + player.w / 2, GROUND_Y, 5, false);
+            if (baseScore + score > best) {
+              best = baseScore + score;
+              saveBest();
+            }
+            break;
+          }
+        }
+      }
+
+      // collisions with special red monsters (AABB + height check)
+      for (let s of specials) {
+        const sLeft = s.wx + 2;
+        const sRight = s.wx + s.w - 2;
+        const sTop = s.y;
+        const pLeft = player.wx;
+        const pRight = player.wx + player.w;
+        const pBottom = player.y + player.h;
+        if (pRight > sLeft && pLeft < sRight) {
+          if (pBottom > sTop + 7) {
+            const now = frame;
+            if (now < player.invulnUntil) {
+              // Fully protected during 5-second post-shield grace period
+            } else if (player.hasShield) {
+              player.hasShield = false;
+              playShieldPop();
+              player.invulnUntil = now + 300; // 5 seconds invulnerability after shield pops
+              for (let k = 0; k < 22; k++) {
+                const ang = Math.random() * Math.PI * 2;
+                const sp = 1.8 + Math.random() * 3.2;
+                particles.push({
+                  x: player.wx + 13, y: player.y + 13,
+                  vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 0.7,
+                  life: 28 + Math.random() * 18, c: '#66ddff', size: 2.0
+                });
+              }
+            } else {
+              gameState = 'over';
+              playDeath('hazard');
+              spawnExplosion(player.wx + player.w / 2, player.y + player.h / 2);
+              spawnDust(player.wx + player.w / 2, GROUND_Y, 4, false);
+              if (baseScore + score > best) {
+                best = baseScore + score;
+                saveBest();
+              }
+              break;
+            }
+          }
+        }
+      }
+
+      // collisions with monster projectiles (slow energy bolts)
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const pr = projectiles[i];
+        const prLeft = pr.wx;
+        const prRight = pr.wx + 6;
+        const prTop = pr.y - 1;
+        const prBottom = pr.y + 4;
+
+        const pLeft = player.wx;
+        const pRight = player.wx + player.w;
+        const pTop = player.y;
+        const pBottom = player.y + player.h;
+
+        if (pRight > prLeft && pLeft < prRight && pBottom > prTop && pTop < prBottom) {
+          const now = frame;
+          if (now < player.invulnUntil) {
+            // Fully protected during 5-second post-shield grace period
+            projectiles.splice(i, 1);
+          } else if (player.hasShield) {
+            player.hasShield = false;
+            playShieldPop();
+            player.invulnUntil = now + 300; // 5 seconds invulnerability after shield pops
+            for (let k = 0; k < 22; k++) {
+              const ang = Math.random() * Math.PI * 2;
+              const sp = 1.8 + Math.random() * 3.2;
+              particles.push({
+                x: player.wx + 13, y: player.y + 13,
+                vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 0.7,
+                life: 28 + Math.random() * 18, c: '#66ddff', size: 2.0
+              });
+            }
+            projectiles.splice(i, 1);
+          } else {
+            gameState = 'over';
+            playDeath('projectile');
+            spawnExplosion(player.wx + player.w / 2, player.y + player.h / 2);
+            // Remove the projectile that hit
+            projectiles.splice(i, 1);
+            if (baseScore + score > best) {
+              best = baseScore + score;
+              saveBest();
+            }
+            break;
+          }
+        }
+      }
+
+      // Collisions with boss fireballs (must avoid while climbing the ladder to escape)
+      for (let i = endFireballs.length - 1; i >= 0; i--) {
+        const fb = endFireballs[i];
+        const fbLeft = fb.wx;
+        const fbRight = fb.wx + 9;
+        const fbTop = fb.y - 2;
+        const fbBottom = fb.y + 6;
+
+        const pLeft = player.wx;
+        const pRight = player.wx + player.w;
+        const pTop = player.y;
+        const pBottom = player.y + player.h;
+
+        if (pRight > fbLeft && pLeft < fbRight && pBottom > fbTop && pTop < fbBottom) {
+          const now = frame;
+          if (now < player.invulnUntil) {
+            // Fully protected during 5-second post-shield grace period
+            endFireballs.splice(i, 1);
+          } else if (player.hasShield) {
+            player.hasShield = false;
+            playShieldPop();
+            player.invulnUntil = now + 300; // 5 seconds invulnerability after shield pops
+            for (let k = 0; k < 22; k++) {
+              const ang = Math.random() * Math.PI * 2;
+              const sp = 1.8 + Math.random() * 3.2;
+              particles.push({
+                x: player.wx + 13, y: player.y + 13,
+                vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 0.7,
+                life: 28 + Math.random() * 18, c: '#66ddff', size: 2.0
+              });
+            }
+            endFireballs.splice(i, 1);
+          } else {
+            gameState = 'over';
+            playDeath('projectile');
+            spawnExplosion(player.wx + player.w / 2, player.y + player.h / 2);
+            endFireballs.splice(i, 1);
+            if (baseScore + score > best) {
+              best = baseScore + score;
+              saveBest();
+            }
+            break;
+          }
+        }
+      }
+
+      // distance score
+      const dist = Math.floor((player.wx - 80) / 5.8);
+      if (dist > score) score = dist;
+
+      // Collect halfway power-up (energy shield)
+      if (powerUp) {
+        const dx = Math.abs(player.wx + 13 - powerUp.wx);
+        const dy = Math.abs(player.y + 13 - powerUp.y);
+        if (dx < 26 && dy < 26) {
+          player.hasShield = true;
+          playPowerup('shield');
+          player.invulnUntil = 0; // Fresh shield replaces any grace period
+
+          // Dismiss first-shield tutorial
+          if (firstShieldTutorialActive) {
+            firstShieldTutorialActive = false;
+          }
+
+          // Nice cyan pickup burst
+          for (let i = 0; i < 14; i++) {
+            const ang = Math.random() * Math.PI * 2;
+            const sp = 1.1 + Math.random() * 1.9;
+            particles.push({
+              x: powerUp.wx,
+              y: powerUp.y,
+              vx: Math.cos(ang) * sp,
+              vy: Math.sin(ang) * sp - 0.7,
+              life: 26 + Math.random() * 18,
+              c: '#66ddff',
+              size: 1.9
+            });
+          }
+          powerUp = null;
+        }
+      }
+
+      // Dismiss first shield tutorial if the powerup scrolls off screen
+      if (firstShieldTutorialActive && powerUp) {
+        const screenX = powerUp.wx - scrollX;
+        if (screenX < -40) {
+          firstShieldTutorialActive = false;
+        }
+      }
+
+      // === BOSS FIREBALLS (large polygonal monster beyond the invisible barrier spits these)
+      // Speed reduced 15%, boss is positioned further back
+      if (levelExit && gameState === 'playing') {
+        const bossWX = levelExit.wx + 225;
+        // Fairly slow fireballs that are dangerous while the player is climbing the ladder
+        if (frame % 74 === 0 && Math.random() < 0.78) {
+          endFireballs.push({
+            wx: bossWX + 8,
+            y: GROUND_Y - 88 + Math.random() * 22,
+            vx: -3.02 - Math.random() * 0.55,   // 15% slower
+            vy: 0.55 + Math.random() * 0.85
+          });
+        }
+      }
+
+      // === NEON ORBS (floating collectibles - dark blue neon) ===
+      if (gameState === 'playing' && frame - lastOrbSpawn > 195) {
+        if (Math.random() < 0.58) {
+          const orbWX = player.wx + 280 + Math.random() * 220;
+          const orbY = GROUND_Y - 65 - Math.random() * 195; // floating in air
+          neonOrbs.push({
+            wx: orbWX,
+            y: orbY,
+            vx: -0.45 - Math.random() * 0.35,
+            phase: Math.random() * Math.PI * 2,
+            value: 1
+          });
+        }
+        lastOrbSpawn = frame;
+      }
+
+      // === GREEN NEON ORBS (faster, higher value collectibles - worth 5 Neon) ===
+      // Spawn less frequently than blue orbs
+      if (gameState === 'playing' && frame - lastGreenOrbSpawn > 280) {
+        if (Math.random() < 0.45) {
+          const orbWX = player.wx + 260 + Math.random() * 240;
+          const orbY = GROUND_Y - 55 - Math.random() * 210;
+          neonOrbs.push({
+            wx: orbWX,
+            y: orbY,
+            vx: -1.15 - Math.random() * 0.55,   // noticeably faster
+            phase: Math.random() * Math.PI * 2,
+            value: 5
+          });
+        }
+        lastGreenOrbSpawn = frame;
+      }
+
+      // === LEVEL EXIT: ladder + portal appears much later (15% longer level) ===
+      if (!levelExit && player.wx > 4255) {
+        levelExit = {
+          wx: player.wx + 110 + Math.random() * 70,
+          baseY: GROUND_Y
+        };
+
+        // Ensure no floating platforms or ANY other objects are touching or overlapping the ending ladder (prevent spawns touching ladder)
+        const ladderCenter = levelExit.wx;
+        const safeMargin = 100; // generous padding so nothing visually or physically overlaps the ladder or top platform; covers triangles/obstacles, enemies/specials, neonOrbs, powerUps, lowWalls, trampolines
+        platforms = platforms.filter(p => {
+          const platCenter = p.wx + p.width / 2;
+          const xDist = Math.abs(platCenter - ladderCenter);
+          // Remove any platform that is horizontally close AND vertically in the ladder's tall range
+          if (xDist < safeMargin && p.y > GROUND_Y - 420) {
+            return false;
+          }
+          return true;
+        });
+        // Extended filters for L1 spawn types near ladder (use x dist + y tall check for high objects; ground objs by x only)
+        obstacles = obstacles.filter(o => Math.abs(o.wx - ladderCenter) >= safeMargin);
+        specials = specials.filter(s => Math.abs(s.wx - ladderCenter) >= safeMargin || (s.y && s.y <= GROUND_Y - 420));
+        neonOrbs = neonOrbs.filter(o => !(Math.abs(o.wx - ladderCenter) < safeMargin && o.y > GROUND_Y - 420));
+        lowWalls = lowWalls.filter(w => Math.abs(w.wx - ladderCenter) >= safeMargin);
+        trampolines = trampolines.filter(t => Math.abs(t.wx - ladderCenter) >= safeMargin);
+        if (powerUp && Math.abs(powerUp.wx - ladderCenter) < safeMargin && powerUp.y > GROUND_Y - 420) {
+          powerUp = null;
+        }
+
+        // Invisible barrier + large polygonal boss beyond it
+        // (boss will be drawn and will start spitting fireballs)
+      }
+
+      // Climb the exit ladder with UP key (starts visible climb - level ends only at portal)
+      if (levelExit && gameState === 'playing' && !player.isClimbing) {
+        const ex = levelExit.wx;
+        const distX = Math.abs(player.wx + player.w * 0.5 - ex);
+        const nearBase = distX < 32 && (player.y + player.h) >= GROUND_Y - 18;
+
+        if (nearBase && (keys['ArrowUp'] || keys['w'] || keys['W'])) {
+          // Begin visible climb animation
+          player.isClimbing = true;
+          player.climbProgress = 0;
+          player.climbStartY = player.y;
+          player.climbTargetY = levelExit.baseY - 305; // tall portal (60%+ of level height)
+          playLadderGrab();
+          keys['ArrowUp'] = false;
+          keys['w'] = false;
+          keys['W'] = false;
+        }
+      }
+
+      // Shield power-up: 3 evenly spaced spawns across the (longer) level
+      const endDist = 4255;
+      const shieldTargets = [endDist * 0.22, endDist * 0.48, endDist * 0.74];
+      if (shieldSpawnIndex < shieldTargets.length && !powerUp && !player.hasShield && player.wx > shieldTargets[shieldSpawnIndex]) {
+        // Random height, never higher than 50% level height (y never too close to top)
+        const minY = GROUND_Y - 260;
+        const maxY = GROUND_Y - 80;
+        powerUp = {
+          wx: player.wx + 155 + Math.random() * 70,
+          y: minY + Math.random() * (maxY - minY)
+        };
+        shieldSpawnIndex++;
+
+        // Activate tutorial only for the very first shield powerup
+        if (shieldSpawnIndex === 1) {
+          firstShieldTutorialActive = true;
+        }
+      }
+    }
+
+    function draw() {
+      // deep void bg
+      ctx.fillStyle = '#02070f';
+      ctx.fillRect(0, 0, W, H);
+      if (window.NeonDashSprites) NeonDashSprites.drawSky(ctx, W, H, GROUND_Y, scrollX, frame);
+
+      // faint stars (very subtle as requested)
+      ctx.fillStyle = '#fff';
+      for (let s of stars) {
+        const sx = s.x - scrollX * 0.11;
+        if (sx < -4 || sx > W + 4) continue;
+        ctx.globalAlpha = s.a;
+        ctx.fillRect(sx, s.y, s.s, s.s);
+        if (s.s > 1.3) {
+          // tiny twinkle
+          ctx.globalAlpha = s.a * 0.35;
+          ctx.fillRect(sx - 1, s.y, 1, s.s);
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      // === DISTANT BACKGROUND SCENERY (rocket pads, labs, planets) ===
+      // Drawn with strong parallax so they feel very far away in the void
+      for (let b of backgroundElements) {
+        const sx = b.wx - scrollX * b.parallax;
+        if (sx < -120 || sx > W + 140) continue;
+
+        const alpha = b.type === 'planet' ? 0.09 : 0.13;
+        ctx.globalAlpha = alpha;
+
+        if (b.type === 'rocket') {
+          // Distant rocket launch complex
+          const s = b.scale;
+          const baseY = b.y;
+          // Launch pad
+          ctx.fillStyle = '#1a2f44';
+          ctx.fillRect(sx, baseY, 38 * s, 5 * s);
+          // Tower
+          ctx.fillRect(sx + 14 * s, baseY - 52 * s, 6 * s, 52 * s);
+          // Top structure
+          ctx.fillRect(sx + 10 * s, baseY - 58 * s, 14 * s, 7 * s);
+          // Very faint vertical "light" lines
+          ctx.fillStyle = 'rgba(120,160,210,0.35)';
+          ctx.fillRect(sx + 16 * s, baseY - 48 * s, 1.5 * s, 44 * s);
+        } else if (b.type === 'lab') {
+          // Distant research lab / dome facility
+          const s = b.scale;
+          const baseY = b.y;
+          ctx.fillStyle = '#162a3f';
+          // Main building
+          ctx.fillRect(sx, baseY, 52 * s, 11 * s);
+          // Low annex
+          ctx.fillRect(sx + 38 * s, baseY + 2 * s, 19 * s, 9 * s);
+          // Dome / observatory
+          ctx.beginPath();
+          ctx.arc(sx + 26 * s, baseY - 1, 13 * s, Math.PI, 0, false);
+          ctx.fill();
+          // Tiny glowing windows (very dim)
+          ctx.fillStyle = 'rgba(90,170,220,0.28)';
+          ctx.fillRect(sx + 8 * s, baseY + 3 * s, 3 * s, 2 * s);
+          ctx.fillRect(sx + 19 * s, baseY + 3.5 * s, 2.5 * s, 2 * s);
+          ctx.fillRect(sx + 46 * s, baseY + 5 * s, 2 * s, 1.5 * s);
+        } else if (b.type === 'planet') {
+          // Distant planet or gas giant
+          const s = b.scale;
+          const py = b.y;
+          const rad = 17 * s;
+
+          if (b.hue === 'blue') {
+            ctx.fillStyle = 'rgba(70,115,175,0.22)';
+          } else if (b.hue === 'orange') {
+            ctx.fillStyle = 'rgba(155,105,55,0.20)';
+          } else {
+            ctx.fillStyle = 'rgba(105,70,155,0.22)';
+          }
+          ctx.beginPath();
+          ctx.arc(sx, py, rad, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Subtle rim light / atmosphere
+          ctx.strokeStyle = 'rgba(200,220,255,0.12)';
+          ctx.lineWidth = 1.5 * s;
+          ctx.beginPath();
+          ctx.arc(sx - 3 * s, py - 2 * s, rad * 0.92, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      // === FLYING ROCKETSHIPS (background space traffic) ===
+      ctx.globalAlpha = 0.18;
+      for (let ship of flyingShips) {
+        const sx = ship.wx - scrollX * ship.parallax;
+        if (sx < -90 || sx > W + 110) continue;
+
+        const s = ship.scale;
+        const sy = ship.y;
+
+        // Fuselage
+        ctx.fillStyle = '#223a55';
+        ctx.fillRect(sx, sy, 42 * s, 5.5 * s);
+
+        // Nose cone
+        ctx.fillStyle = '#2f4a66';
+        ctx.beginPath();
+        ctx.moveTo(sx + 42 * s, sy + 2.5 * s);
+        ctx.lineTo(sx + 52 * s, sy + 2.7 * s);
+        ctx.lineTo(sx + 42 * s, sy + 5.2 * s);
+        ctx.closePath();
+        ctx.fill();
+
+        // Engine glow (neon)
+        ctx.fillStyle = '#55bbff';
+        ctx.fillRect(sx - 3 * s, sy + 1.2 * s, 5 * s, 3 * s);
+
+        // Tiny cabin windows
+        ctx.fillStyle = 'rgba(140,200,255,0.45)';
+        ctx.fillRect(sx + 12 * s, sy + 1.3 * s, 2.5 * s, 1.4 * s);
+        ctx.fillRect(sx + 20 * s, sy + 1.3 * s, 2.5 * s, 1.4 * s);
+
+        // Very faint engine trail
+        ctx.fillStyle = 'rgba(100,180,255,0.12)';
+        ctx.fillRect(sx - 14 * s, sy + 1.8 * s, 11 * s, 1.8 * s);
+      }
+      ctx.globalAlpha = 1;
+
+      // === FLOATING "NEON DASH" NEON SIGN AT START ===
+      if (player.wx < 680 && gameState === 'playing') {
+        const signX = 260 - scrollX * 0.08;
+        const signY = 92;
+        const signW = 280;
+        const signH = 118;
+        if (!(window.NeonDashSprites && NeonDashSprites.drawWorldSign(ctx, signX - signW / 2, signY - 44, signW, signH))) {
+          ctx.fillStyle = '#2a0a3a';
+          ctx.fillRect(signX - 92, signY - 18, 185, 36);
+        }
+        ctx.fillStyle = '#e8fbff';
+        ctx.font = '700 22px Segoe UI, Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('NEON DASH', signX, signY + 2);
+        ctx.strokeStyle = '#66e8ff';
+        ctx.lineWidth = 1.1;
+        ctx.strokeText('NEON DASH', signX, signY + 2);
+      }
+
+      // === GLOWING BLUE FLOOR ===
+      const floorTop = GROUND_Y - 2;
+
+      // outer soft glow
+      ctx.save();
+      ctx.shadowColor = '#3a7bc8';
+      ctx.shadowBlur = 38;
+      ctx.fillStyle = 'rgba(45, 95, 165, 0.22)';
+      ctx.fillRect(0, floorTop - 9, W, 52);
+
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = 'rgba(70, 130, 205, 0.28)';
+      ctx.fillRect(0, floorTop - 2, W, 22);
+      ctx.restore();
+
+      // base floor
+      ctx.fillStyle = '#0b2444';
+      ctx.fillRect(0, floorTop, W, H - floorTop);
+      if (window.NeonDashSprites) NeonDashSprites.drawGround(ctx, W, GROUND_Y, H, scrollX);
+
+      // top edge highlight (glow line)
+      ctx.fillStyle = '#5aa0e0';
+      ctx.fillRect(0, floorTop, W, 2.5);
+
+      // inner bright seam
+      ctx.fillStyle = '#77bbff';
+      ctx.fillRect(0, floorTop + 1, W, 1);
+
+      // moving floor markers for sense of speed (parallax)
+      ctx.fillStyle = 'rgba(90, 155, 230, 0.32)';
+      const mOffset = (scrollX * 1.35) % 68;
+      for (let i = -1; i < 17; i++) {
+        const mx = i * 68 - mOffset + 18;
+        ctx.fillRect(mx, floorTop + 7, 15, 2);
+      }
+      // secondary slower markers
+      ctx.fillStyle = 'rgba(70, 130, 205, 0.18)';
+      const mOffset2 = (scrollX * 0.6) % 110;
+      for (let i = -1; i < 11; i++) {
+        const mx = i * 110 - mOffset2 + 40;
+        ctx.fillRect(mx, floorTop + 14, 28, 1.5);
+      }
+
+      // === LOW WALLS / BARRIERS (must jump over - solid but non-lethal) ===
+      for (let wall of lowWalls) {
+        const sx = wall.wx - scrollX;
+        if (sx < -30 || sx > W + 30) continue;
+
+        const wh = wall.height;
+        const ww = wall.width;
+
+        // Base stone-like block (dark void blue)
+        ctx.fillStyle = '#0f243a';
+        ctx.fillRect(sx, GROUND_Y - wh, ww, wh);
+
+        // Top edge (slightly lighter, looks like a lip)
+        ctx.fillStyle = '#1a3a55';
+        ctx.fillRect(sx, GROUND_Y - wh, ww, 4);
+
+        // Subtle top highlight line
+        ctx.fillStyle = '#2a5a7a';
+        ctx.fillRect(sx, GROUND_Y - wh, ww, 1.5);
+
+        // Small vertical "support" lines for texture
+        ctx.fillStyle = 'rgba(40, 80, 110, 0.5)';
+        ctx.fillRect(sx + 3, GROUND_Y - wh + 3, 1.5, wh - 5);
+        ctx.fillRect(sx + ww - 5, GROUND_Y - wh + 3, 1.5, wh - 5);
+      }
+
+      // === OVAL TRAMPOLINES (neon bounce pads before tall walls) ===
+      for (let t of trampolines) {
+        const sx = t.wx - scrollX;
+        if (sx < -50 || sx > W + 50) continue;
+
+        const tw = t.width;
+        const ty = GROUND_Y - 3;
+
+        // Soft neon glow under the trampoline
+        ctx.fillStyle = 'rgba(80, 255, 200, 0.18)';
+        ctx.beginPath();
+        ctx.ellipse(sx + tw / 2, ty + 4, tw / 2 + 8, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Main oval trampoline surface (bright cyan/mint)
+        ctx.fillStyle = '#33ffcc';
+        ctx.beginPath();
+        ctx.ellipse(sx + tw / 2, ty, tw / 2, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Inner highlight
+        ctx.fillStyle = '#aaffee';
+        ctx.beginPath();
+        ctx.ellipse(sx + tw / 2 - 2, ty - 1, tw / 2 - 4, 2.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Subtle edge ring
+        ctx.strokeStyle = '#119977';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(sx + tw / 2, ty, tw / 2, 5, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // === FLOATING PLATFORMS (glowing blue sci-fi pads) ===
+      for (let p of platforms) {
+        const sx = p.wx - scrollX;
+        if (sx < -90 || sx > W + 90) continue;
+        const py = p.y;
+
+        // soft shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fillRect(sx + 4, py + p.height + 3, p.width - 6, 5);
+
+        if (window.NeonDashSprites && NeonDashSprites.drawPlatform(ctx, sx, py, p.width, p.height)) {
+          continue;
+        }
+
+        // main platform body
+        ctx.fillStyle = '#0e2744';
+        ctx.fillRect(sx, py, p.width, p.height);
+
+        // bright cyan top edge (glow)
+        ctx.fillStyle = '#4fa8d8';
+        ctx.fillRect(sx, py, p.width, 2);
+
+        // inner highlight
+        ctx.fillStyle = '#6bc4f0';
+        ctx.fillRect(sx + 3, py + 2, p.width - 6, 1);
+
+        // underside detail
+        ctx.fillStyle = '#1e3a58';
+        ctx.fillRect(sx + 2, py + p.height - 3, p.width - 4, 2);
+
+        // corner marker lights
+        ctx.fillStyle = '#88ddff';
+        ctx.fillRect(sx + 5, py + 2.5, 2, 1);
+        ctx.fillRect(sx + p.width - 8, py + 2.5, 2, 1);
+      }
+
+      // draw obstacles (triangles)
+      for (let o of obstacles) {
+        const sx = o.wx - scrollX;
+        if (sx < -30 || sx > W + 30) continue;
+
+        const th = o.h;
+        const tw = 27;
+
+        // shadow under triangle
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.beginPath();
+        ctx.moveTo(sx - tw/2 - 1, GROUND_Y + 3);
+        ctx.lineTo(sx + tw/2 + 1, GROUND_Y + 3);
+        ctx.lineTo(sx, GROUND_Y - th * 0.35);
+        ctx.closePath();
+        ctx.fill();
+
+        if (!(window.NeonDashSprites && NeonDashSprites.drawSprite(ctx, 'hazard', sx - tw / 2, GROUND_Y - th, tw, th))) {
+          ctx.fillStyle = '#e8553a';
+          ctx.beginPath();
+          ctx.moveTo(sx, GROUND_Y - th);
+          ctx.lineTo(sx - tw / 2, GROUND_Y + 0.5);
+          ctx.lineTo(sx + tw / 2, GROUND_Y + 0.5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = '#ffaa77';
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.moveTo(sx, GROUND_Y - th);
+          ctx.lineTo(sx - tw / 2 + 2, GROUND_Y - 0.5);
+          ctx.stroke();
+          ctx.fillStyle = '#ffdd99';
+          ctx.fillRect(sx - 1.5, GROUND_Y - th + 5, 3, 1.5);
+        }
+      }
+
+      // === SPECIAL RED MONSTERS (slow chasers) ===
+      for (let s of specials) {
+        const sx = s.wx - scrollX;
+        const sy = s.y;
+        if (sx < -60 || sx > W + 60) continue;
+
+        // soft shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillRect(sx + 4, GROUND_Y - 1, s.w - 5, 4);
+
+        if (window.NeonDashSprites && NeonDashSprites.drawSprite(ctx, 'enemy', sx, sy, s.w, s.h)) {
+          continue;
+        }
+
+        // body (deep red)
+        ctx.fillStyle = '#c83322';
+        ctx.fillRect(sx + 3, sy + 5, s.w - 5, s.h - 7);
+
+        // head / carapace
+        ctx.fillStyle = '#a62618';
+        ctx.fillRect(sx + 5, sy + 1, s.w - 9, 8);
+
+        // small back spikes/horns
+        ctx.fillStyle = '#7a1a12';
+        ctx.fillRect(sx + 6, sy, 4, 5);
+        ctx.fillRect(sx + s.w - 11, sy + 2, 5, 4);
+
+        // evil glowing eyes
+        ctx.fillStyle = '#ffdd55';
+        ctx.fillRect(sx + 8, sy + 9, 3, 3);
+        ctx.fillRect(sx + s.w - 12, sy + 9, 3, 3);
+        // pupils
+        ctx.fillStyle = '#220000';
+        ctx.fillRect(sx + 9, sy + 10, 1, 1);
+        ctx.fillRect(sx + s.w - 11, sy + 10, 1, 1);
+
+        // darker lower body + tiny legs
+        ctx.fillStyle = '#7a1a12';
+        ctx.fillRect(sx + 4, sy + s.h - 6, s.w - 7, 5);
+        ctx.fillStyle = '#aa2a1f';
+        ctx.fillRect(sx + 6, sy + s.h - 2, 4, 2);
+        ctx.fillRect(sx + s.w - 11, sy + s.h - 2, 4, 2);
+
+        // thin outline
+        ctx.strokeStyle = '#551100';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(sx + 2.5, sy + 1.5, s.w - 5, s.h - 3);
+      }
+
+      // === MONSTER PROJECTILES (slow glowing enemy fire) ===
+      for (let pr of projectiles) {
+        const sx = pr.wx - scrollX;
+        const sy = pr.y;
+        if (sx < -20 || sx > W + 20) continue;
+        if (window.NeonDashSprites && NeonDashSprites.drawShot(ctx, 'bolt', sx + 3, sy, frame, 34, 16, pr.vx, pr.vy)) continue;
+
+        // Main bolt (glowing red-orange energy)
+        ctx.fillStyle = '#ff6644';
+        ctx.fillRect(sx, sy - 1, 7, 3);
+
+        // Bright core
+        ctx.fillStyle = '#ffaa66';
+        ctx.fillRect(sx + 1, sy, 4, 1);
+
+        // Soft outer glow
+        ctx.fillStyle = 'rgba(255,120,60,0.35)';
+        ctx.fillRect(sx - 2, sy - 2.5, 11, 6);
+      }
+
+      // === LEVEL EXIT LADDER + PORTAL (appears after ~1000 distance) ===
+      if (levelExit) {
+        const lx = levelExit.wx - scrollX;
+        const baseY = levelExit.baseY;
+
+        // Tall ladder structure (at least 60% of level height when end spawns)
+        ctx.strokeStyle = '#334c66';
+        ctx.lineWidth = 3;
+        // Left rail
+        ctx.beginPath();
+        ctx.moveTo(lx - 9, baseY);
+        ctx.lineTo(lx - 9, baseY - 320);
+        ctx.stroke();
+        // Right rail
+        ctx.beginPath();
+        ctx.moveTo(lx + 9, baseY);
+        ctx.lineTo(lx + 9, baseY - 320);
+        ctx.stroke();
+
+        // Rungs (more rungs for taller ladder)
+        ctx.strokeStyle = '#2a4157';
+        ctx.lineWidth = 2;
+        for (let r = 0; r < 19; r++) {
+          const ry = baseY - 12 - r * 16;
+          ctx.beginPath();
+          ctx.moveTo(lx - 8, ry);
+          ctx.lineTo(lx + 8, ry);
+          ctx.stroke();
+        }
+
+        // Top platform / arch (higher)
+        ctx.fillStyle = '#1f3347';
+        ctx.fillRect(lx - 16, baseY - 323, 32, 7);
+
+        // Glowing cyan portal / rift at the top
+        const portalY = baseY - 305;
+        if (!(window.NeonDashSprites && NeonDashSprites.drawPortal(ctx, lx, portalY, frame))) {
+          ctx.save();
+          ctx.shadowColor = '#66ddff';
+          ctx.shadowBlur = 28;
+          ctx.fillStyle = '#55bbff';
+          ctx.beginPath();
+          ctx.ellipse(lx, portalY, 26, 38, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          ctx.fillStyle = '#aaddff';
+          ctx.beginPath();
+          ctx.ellipse(lx, portalY - 2, 12, 20, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#88eeff';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(lx, portalY, 26, 38, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      // === LARGE POLYGONAL BOSS MONSTER (beyond the invisible barrier - stomps & spits fireballs) ===
+      if (levelExit) {
+        // Boss spawns further away and slowly retreats as player approaches the ladder
+        const baseBossOffset = 225;
+        const progressToEnd = Math.min(1, Math.max(0, (player.wx - (levelExit.wx - 280)) / 420));
+        const retreat = progressToEnd * 95;   // moves further away as player nears exit
+        const bossWX = levelExit.wx + baseBossOffset + retreat;
+        const bx = bossWX - scrollX;
+        const by = GROUND_Y - 18;   // base on ground
+
+        const stomp = Math.sin(frame * 0.065) * 5;     // stomping legs
+        const stomp2 = Math.sin(frame * 0.065 + 1.8) * 4.5;
+
+        ctx.save();
+
+        // Body (large irregular polygonal mass)
+        ctx.fillStyle = '#2a0f0f';
+        ctx.beginPath();
+        ctx.moveTo(bx - 8, by - 72);
+        ctx.lineTo(bx + 52, by - 68);
+        ctx.lineTo(bx + 58, by - 38);
+        ctx.lineTo(bx + 48, by - 12);
+        ctx.lineTo(bx - 14, by - 18);
+        ctx.lineTo(bx - 22, by - 48);
+        ctx.closePath();
+        ctx.fill();
+
+        // Darker lower body mass
+        ctx.fillStyle = '#1a0808';
+        ctx.beginPath();
+        ctx.moveTo(bx - 14, by - 18);
+        ctx.lineTo(bx + 48, by - 12);
+        ctx.lineTo(bx + 42, by + 2);
+        ctx.lineTo(bx - 18, by - 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // Spiky back ridge (polygonal)
+        ctx.fillStyle = '#3a1515';
+        ctx.beginPath();
+        ctx.moveTo(bx + 2, by - 72);
+        ctx.lineTo(bx + 18, by - 92);
+        ctx.lineTo(bx + 32, by - 70);
+        ctx.lineTo(bx + 44, by - 88);
+        ctx.lineTo(bx + 52, by - 68);
+        ctx.closePath();
+        ctx.fill();
+
+        // Head / upper mass
+        ctx.fillStyle = '#3f1a1a';
+        ctx.beginPath();
+        ctx.moveTo(bx - 4, by - 68);
+        ctx.lineTo(bx + 38, by - 64);
+        ctx.lineTo(bx + 34, by - 42);
+        ctx.lineTo(bx - 8, by - 46);
+        ctx.closePath();
+        ctx.fill();
+
+        // Glowing red eye / vent
+        ctx.fillStyle = '#ff5533';
+        ctx.beginPath();
+        ctx.arc(bx + 18, by - 56, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffaa44';
+        ctx.beginPath();
+        ctx.arc(bx + 19, by - 56, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Left leg (stomping)
+        ctx.fillStyle = '#220a0a';
+        ctx.fillRect(bx + 4, by - 18 + stomp, 11, 20 - stomp * 0.6);
+        // Right leg (stomping opposite phase)
+        ctx.fillRect(bx + 26, by - 18 + stomp2, 11, 20 - stomp2 * 0.6);
+
+        // Foot details
+        ctx.fillStyle = '#150505';
+        ctx.fillRect(bx + 2, by - 2 + stomp * 0.4, 15, 5);
+        ctx.fillRect(bx + 24, by - 2 + stomp2 * 0.4, 15, 5);
+
+        // Arm / claw (polygonal)
+        ctx.fillStyle = '#2f1212';
+        ctx.beginPath();
+        ctx.moveTo(bx + 48, by - 38);
+        ctx.lineTo(bx + 68, by - 52);
+        ctx.lineTo(bx + 72, by - 44);
+        ctx.lineTo(bx + 52, by - 32);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+
+        // === ALIEN TREES surrounding the boss (background at level end) ===
+        const treeBaseY = GROUND_Y - 5;
+        // Left trees
+        for (let i = -1; i <= 1; i++) {
+          const tx = bx - 95 + i * 38;
+          // Trunk
+          ctx.fillStyle = '#0a2a22';
+          ctx.fillRect(tx, treeBaseY - 48, 6, 50);
+          // Alien glowing fronds / spikes (triangular)
+          ctx.fillStyle = '#114433';
+          ctx.beginPath();
+          ctx.moveTo(tx - 14, treeBaseY - 48);
+          ctx.lineTo(tx + 3, treeBaseY - 78);
+          ctx.lineTo(tx + 20, treeBaseY - 48);
+          ctx.fill();
+          ctx.fillStyle = '#226655';
+          ctx.beginPath();
+          ctx.moveTo(tx - 10, treeBaseY - 42);
+          ctx.lineTo(tx + 3, treeBaseY - 62);
+          ctx.lineTo(tx + 16, treeBaseY - 42);
+          ctx.fill();
+        }
+        // Right trees
+        for (let i = -1; i <= 1; i++) {
+          const tx = bx + 95 + i * 38;
+          ctx.fillStyle = '#0a2a22';
+          ctx.fillRect(tx, treeBaseY - 48, 6, 50);
+          ctx.fillStyle = '#114433';
+          ctx.beginPath();
+          ctx.moveTo(tx - 14, treeBaseY - 48);
+          ctx.lineTo(tx + 3, treeBaseY - 78);
+          ctx.lineTo(tx + 20, treeBaseY - 48);
+          ctx.fill();
+          ctx.fillStyle = '#226655';
+          ctx.beginPath();
+          ctx.moveTo(tx - 10, treeBaseY - 42);
+          ctx.lineTo(tx + 3, treeBaseY - 62);
+          ctx.lineTo(tx + 16, treeBaseY - 42);
+          ctx.fill();
+        }
+
+        // === RINGED PLANET in the sky directly over the boss ===
+        const planetX = bx + 25;
+        const planetY = 78;
+        const pRadius = 28;
+
+        // Planet body (dark purple-blue)
+        ctx.fillStyle = '#2a1a4a';
+        ctx.beginPath();
+        ctx.arc(planetX, planetY, pRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Subtle surface detail
+        ctx.fillStyle = '#3a2a5a';
+        ctx.beginPath();
+        ctx.arc(planetX - 6, planetY + 4, 11, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Glowing rings (ellipse)
+        ctx.strokeStyle = 'rgba(180, 140, 255, 0.65)';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.ellipse(planetX, planetY + 3, pRadius * 1.75, 7, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Inner ring highlight
+        ctx.strokeStyle = 'rgba(220, 190, 255, 0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(planetX, planetY + 3, pRadius * 1.75, 7, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Very faint outer ring
+        ctx.strokeStyle = 'rgba(140, 100, 200, 0.3)';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.ellipse(planetX, planetY + 4, pRadius * 2.1, 9, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // === BOSS FIREBALLS (dangerous while climbing the ladder) ===
+      for (let fb of endFireballs) {
+        const sx = fb.wx - scrollX;
+        const sy = fb.y;
+        if (sx < -20 || sx > W + 40) continue;
+        if (window.NeonDashSprites && NeonDashSprites.drawShot(ctx, 'fire', sx + 4, sy + 2, frame, 26, 26, fb.vx, fb.vy)) continue;
+
+        // Outer flame glow
+        ctx.fillStyle = 'rgba(255, 100, 30, 0.35)';
+        ctx.beginPath();
+        ctx.arc(sx + 4, sy + 1.5, 8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Core fireball
+        ctx.fillStyle = '#ff6622';
+        ctx.beginPath();
+        ctx.arc(sx + 4, sy + 2, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Hot inner
+        ctx.fillStyle = '#ffdd66';
+        ctx.beginPath();
+        ctx.arc(sx + 5, sy + 1, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // === NEON ORBS (dark blue + green glowing collectibles) ===
+      for (let orb of neonOrbs) {
+        const sx = orb.wx - scrollX;
+        const sy = orb.y;
+        if (sx < -25 || sx > W + 25) continue;
+
+        const isGreen = (orb.value === 5);
+        const pulse = Math.sin(frame * 0.12 + orb.phase) * (isGreen ? 1.5 : 1.2);
+        const orbR = isGreen ? 12 : 11;
+        if (window.NeonDashSprites && NeonDashSprites.drawSprite(ctx, isGreen ? 'orbGreen' : 'orb', sx + 3 - orbR, sy - orbR, orbR * 2, orbR * 2)) {
+          continue;
+        }
+
+        if (isGreen) {
+          // Green glowing orb (faster, worth 5)
+          ctx.fillStyle = 'rgba(60, 220, 120, 0.35)';
+          ctx.beginPath();
+          ctx.arc(sx + 3, sy, 10 + pulse * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#33dd88';
+          ctx.beginPath();
+          ctx.arc(sx + 3, sy, 6, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#aaffcc';
+          ctx.beginPath();
+          ctx.arc(sx + 1.5, sy - 1.5, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          // Standard dark blue orb (worth 1)
+          ctx.fillStyle = 'rgba(40, 70, 160, 0.32)';
+          ctx.beginPath();
+          ctx.arc(sx + 3, sy, 9 + pulse * 0.4, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#2244aa';
+          ctx.beginPath();
+          ctx.arc(sx + 3, sy, 5.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#5588ff';
+          ctx.beginPath();
+          ctx.arc(sx + 1.5, sy - 1.5, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // === SHIELD POWERUP (diamond core + glowing bubble shield) ===
+      if (powerUp) {
+        const pux = powerUp.wx - scrollX;
+        const puy = powerUp.y;
+        if (window.NeonDashSprites && NeonDashSprites.drawPickup(ctx, pux, puy, 38, frame)) {
+        } else {
+        const pulse = Math.sin(frame * 0.18) * 2.2;
+
+        ctx.save();
+
+        // Soft cyan bubble shield around diamond (reads as "shield" at game scale)
+        const bubbleR = 14 + pulse * 0.35;
+        ctx.shadowColor = '#44ccff';
+        ctx.shadowBlur = 12 + pulse * 0.8;
+        const bubbleGrad = ctx.createRadialGradient(pux - 2, puy - 3, 1, pux, puy, bubbleR);
+        bubbleGrad.addColorStop(0, 'rgba(120, 230, 255, 0.28)');
+        bubbleGrad.addColorStop(0.55, 'rgba(60, 180, 255, 0.12)');
+        bubbleGrad.addColorStop(1, 'rgba(40, 150, 255, 0.03)');
+        ctx.fillStyle = bubbleGrad;
+        ctx.beginPath();
+        ctx.arc(pux, puy, bubbleR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(130, 230, 255, 0.8)';
+        ctx.lineWidth = 1.7;
+        ctx.beginPath();
+        ctx.arc(pux, puy, bubbleR, 0, Math.PI * 2);
+        ctx.stroke();
+        // Glass highlight arc
+        ctx.strokeStyle = 'rgba(210, 250, 255, 0.55)';
+        ctx.lineWidth = 1.15;
+        ctx.shadowBlur = 3;
+        ctx.beginPath();
+        ctx.arc(pux - 1.5, puy - 2, bubbleR * 0.7, -Math.PI * 0.9, -Math.PI * 0.2);
+        ctx.stroke();
+
+        // Diamond core (glowing orange shield emblem)
+        ctx.shadowColor = '#ffaa44';
+        ctx.shadowBlur = 14 + pulse * 0.7;
+        const s = 9 + pulse * 0.25;
+
+        ctx.fillStyle = '#ff8833';
+        ctx.beginPath();
+        ctx.moveTo(pux, puy - s * 1.1);           // top center
+        ctx.lineTo(pux + s * 0.85, puy - s * 0.35);
+        ctx.lineTo(pux + s * 0.75, puy + s * 0.65);
+        ctx.lineTo(pux, puy + s * 1.15);          // bottom point
+        ctx.lineTo(pux - s * 0.75, puy + s * 0.65);
+        ctx.lineTo(pux - s * 0.85, puy - s * 0.35);
+        ctx.closePath();
+        ctx.fill();
+
+        // Brighter edge highlight
+        ctx.strokeStyle = '#ffcc88';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+
+        // Inner detail (small cross / emblem)
+        ctx.fillStyle = '#ffddaa';
+        ctx.fillRect(pux - 1.5, puy - 4, 3, 1.2);
+        ctx.fillRect(pux - 1, puy - 6, 2, 5);
+
+        ctx.restore();
+        }
+      }
+
+      // draw player cube
+      const px = player.wx - scrollX;
+      const py = player.y;
+
+      // soft drop shadow
+      ctx.fillStyle = 'rgba(0, 20, 40, 0.45)';
+      ctx.fillRect(px + 5, GROUND_Y - 1, player.w - 3, 5);
+
+      if (!(window.NeonDashSprites && NeonDashSprites.drawSprite(ctx, 'player', px, py, player.w, player.h))) {
+        ctx.fillStyle = '#5fd0ff';
+        ctx.fillRect(px, py, player.w, player.h);
+        ctx.fillStyle = '#a8e8ff';
+        ctx.fillRect(px + 2, py + 2, player.w - 4, 5);
+        ctx.fillRect(px + 2, py + 2, 4, player.h - 4);
+        ctx.fillStyle = '#1a8fb8';
+        ctx.fillRect(px + player.w - 5, py + 5, 3, player.h - 6);
+        ctx.fillRect(px + 5, py + player.h - 5, player.w - 8, 3);
+        ctx.strokeStyle = '#0c3a4f';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(px + 0.75, py + 0.75, player.w - 1.5, player.h - 1.5);
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.fillRect(px + 6, py + 5, 2, 2);
+      }
+
+      // === VISIBLE ENERGY SHIELD (mario-style power-up - absorbs 1 hit, then grants 5s invulnerability) ===
+      if (player.hasShield) {
+        const cx = px + player.w / 2;
+        const cy = py + player.h / 2 + 1;
+        if (!(window.NeonDashSprites && NeonDashSprites.drawShield(ctx, cx, cy, player.w, player.h, frame))) {
+          const pulse = Math.sin(frame * 0.21) * 1.8;
+          ctx.save();
+          ctx.strokeStyle = '#66ddff';
+          ctx.lineWidth = 2.8;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, player.w / 2 + 10 + pulse * 0.4, player.h / 2 + 13 + pulse * 0.5, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      // Subtle invulnerability afterglow (5 seconds after shield pops - no bubble, just faint protection indicator)
+      if (!player.hasShield && frame < player.invulnUntil) {
+        const cx = px + player.w / 2;
+        const cy = py + player.h / 2 + 1;
+        const remaining = (player.invulnUntil - frame) / 300;
+        const pulse = Math.sin(frame * 0.18) * (1.5 + remaining * 2);
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(140, 200, 255, 0.25)';
+        ctx.lineWidth = 1.5;
+        ctx.shadowBlur = 3;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, player.w / 2 + 6 + pulse, player.h / 2 + 8 + pulse, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // particles
+      for (let p of particles) {
+        const baseAlpha = (p.c === '#66ddff') ? 0.22 : 0.15;
+        const alpha = Math.max(baseAlpha, p.life / (p.c === '#66ddff' ? 85 : 42));
+        ctx.fillStyle = p.c || '#88ccdd';
+        ctx.globalAlpha = alpha;
+
+        const psize = p.size || 1.8;
+        ctx.fillRect(p.x - scrollX, p.y, psize, psize);
+      }
+      ctx.globalAlpha = 1;
+
+      // === UI OVERLAYS ===
+      if (gameState === 'playing') {
+        // First shield powerup tutorial (only for the very first one)
+        if (firstShieldTutorialActive && powerUp) {
+          const pux = powerUp.wx - scrollX;
+          const puy = powerUp.y;
+
+          // Text box in upper area
+          const boxX = W / 2 - 155;
+          const boxY = 32;
+          const boxW = 310;
+          const boxH = 48;
+
+          // Semi-transparent background with blue border
+          ctx.fillStyle = 'rgba(8, 20, 40, 0.85)';
+          ctx.fillRect(boxX, boxY, boxW, boxH);
+          ctx.strokeStyle = '#4488cc';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+          // Instructional text
+          ctx.fillStyle = '#aaddff';
+          ctx.font = '13px Segoe UI, Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('Touch this powerup to get a shield', W / 2, boxY + 18);
+          ctx.fillText('to protect you for a time...', W / 2, boxY + 34);
+
+          // Thin blue pointing line to the powerup
+          ctx.strokeStyle = '#66bbff';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(W / 2, boxY + boxH);           // bottom center of box
+          ctx.lineTo(pux, puy - 14);                // near top of the shield icon
+          ctx.stroke();
+        }
+
+        // distance readout (top right)
+        ctx.font = '700 13px Segoe UI, Arial';
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#77bbdd';
+        ctx.fillText('DISTANCE', W - 18, 24);
+        ctx.font = '700 22px Consolas, monospace';
+        ctx.fillStyle = '#aaddff';
+        ctx.fillText(String(baseScore + score).padStart(5, '0'), W - 18, 48);
+
+        // small jump counter
+        ctx.font = '11px Consolas, monospace';
+        ctx.fillStyle = '#5588aa';
+        ctx.fillText('JUMPS ' + jumpCount, W - 18, 66);
+
+        // Neon Score (blue + green orbs collected)
+        ctx.font = '700 13px Segoe UI, Arial';
+        ctx.fillStyle = '#4466cc';
+        ctx.fillText('NEON', W - 18, 84);
+        ctx.font = '700 20px Consolas, monospace';
+        ctx.fillStyle = '#6688ff';
+        ctx.fillText(String(neonScore).padStart(3, '0'), W - 18, 104);
+
+        // Level Progress bar (fills as player approaches the ending)
+        const progress = Math.min(1, Math.max(0, player.wx / 4255));
+        const barY = 8;
+        const barW = 180;
+        const barH = 5;
+
+        // Background track
+        ctx.fillStyle = 'rgba(30, 50, 90, 0.6)';
+        ctx.fillRect(W / 2 - barW / 2, barY, barW, barH);
+
+        // Neon fill
+        ctx.fillStyle = '#66aaff';
+        ctx.fillRect(W / 2 - barW / 2, barY, barW * progress, barH);
+
+        // Subtle glow outline
+        ctx.strokeStyle = 'rgba(120, 180, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(W / 2 - barW / 2 - 1, barY - 1, barW + 2, barH + 2);
+      }
+
+      if (gameState === 'start') {
+        if (!(window.NeonDashSprites && NeonDashSprites.drawHudPlate(ctx, W, H))) {
+          ctx.fillStyle = 'rgba(2, 7, 15, 0.48)';
+          ctx.fillRect(W / 2 - 320, H / 2 - 150, 640, 300);
+        }
+
+        ctx.font = '700 36px Segoe UI, Arial';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#88d4ff';
+        ctx.fillText('NEON DASH', W / 2, H / 2 - 52);
+
+        ctx.font = '13px Consolas, monospace';
+        ctx.fillStyle = '#5a8fb8';
+        ctx.fillText('SIDE-SCROLL HAZARD PROTOCOL', W / 2, H / 2 - 26);
+
+        ctx.font = '13px Segoe UI, Arial';
+        ctx.fillStyle = '#6699bb';
+        ctx.fillText('ARROW KEYS OR A/D  —  MOVE', W / 2, H / 2 + 18);
+        ctx.fillText('SPACE  —  JUMP TRIANGLES + MONSTERS', W / 2, H / 2 + 36);
+
+        ctx.font = '12px Consolas, monospace';
+        ctx.fillStyle = '#447799';
+        ctx.fillText('PRESS SPACE OR CLICK TO START', W / 2, H / 2 + 72);
+      }
+
+      if (gameState === 'over') {
+        if (!(window.NeonDashSprites && NeonDashSprites.drawHudPlate(ctx, W, H))) {
+          ctx.fillStyle = 'rgba(3, 6, 12, 0.48)';
+          ctx.fillRect(W / 2 - 320, H / 2 - 150, 640, 300);
+        }
+
+        ctx.font = '700 28px Segoe UI, Arial';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ff8866';
+        ctx.fillText('COLLISION DETECTED', W / 2, H / 2 - 38);
+
+        ctx.font = '15px Consolas, monospace';
+        ctx.fillStyle = '#aaddff';
+        ctx.fillText('DISTANCE TRAVELED: ' + String(baseScore + score).padStart(5, '0'), W / 2, H / 2 + 4);
+
+        if (baseScore + score === best && baseScore + score > 0) {
+          ctx.fillStyle = '#ffcc66';
+          ctx.fillText('NEW PERSONAL BEST', W / 2, H / 2 + 24);
+        } else if (best > 0) {
+          ctx.fillStyle = '#6688aa';
+          ctx.fillText('BEST: ' + String(best).padStart(5, '0'), W / 2, H / 2 + 24);
+        }
+
+        ctx.font = '12px Segoe UI, Arial';
+        ctx.fillStyle = '#5588aa';
+        ctx.fillText('PRESS R  OR  CLICK TO RESTART', W / 2, H / 2 + 58);
+      }
+
+      if (gameState === 'complete') {
+        if (!(window.NeonDashSprites && NeonDashSprites.drawHudPlate(ctx, W, H))) {
+          ctx.fillStyle = 'rgba(2, 6, 14, 0.48)';
+          ctx.fillRect(W / 2 - 320, H / 2 - 150, 640, 300);
+        }
+
+        ctx.font = '700 32px Segoe UI, Arial';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#66ddff';
+        ctx.fillText('LEVEL COMPLETE', W / 2, H / 2 - 52);
+
+        ctx.font = '15px Consolas, monospace';
+        ctx.fillStyle = '#aaddff';
+        ctx.fillText('DISTANCE TRAVELED: ' + String(baseScore + score).padStart(5, '0'), W / 2, H / 2 + 2);
+
+        ctx.font = '13px Segoe UI, Arial';
+        ctx.fillStyle = '#88bbdd';
+        ctx.fillText('JUMPS: ' + jumpCount, W / 2, H / 2 + 24);
+
+        ctx.font = '15px Consolas, monospace';
+        ctx.fillStyle = '#88ffbb';
+        ctx.fillText('NEON COLLECTED: ' + neonScore, W / 2, H / 2 + 48);
+
+        if (baseScore + score === best) {
+          ctx.fillStyle = '#ffcc66';
+          ctx.fillText('NEW PERSONAL BEST!', W / 2, H / 2 + 72);
+        }
+
+        ctx.font = '12px Segoe UI, Arial';
+        ctx.fillStyle = '#5588aa';
+        ctx.fillText('PRESS R  OR  CLICK TO PLAY AGAIN', W / 2, H / 2 + 96);
+      }
+    }
+
+    // Show/hide Level 2 link based on game state
+    function updateLevel2LinkVisibility() {
+      const container = document.getElementById('level2-link-container');
+      if (container) {
+        container.style.display = (gameState === 'complete') ? 'block' : 'none';
+      }
+    }
+
+    function gameLoop() {
+      try {
+        update();
+        draw();
+        updateLevel2LinkVisibility();
+      } catch (err) {
+        console.error('[Neon Dash] gameLoop error:', err);
+      } finally {
+        requestAnimationFrame(gameLoop);
+      }
+    }
+
+    function startPlaying() {
+      getAudioCtx();
+      if (gameState === 'start') {
+        gameState = 'playing';
+      } else if (gameState === 'over' || gameState === 'complete') {
+        resetGame();
+        gameState = 'playing';
+      }
+      updateLevel2LinkVisibility();
+    }
+
+    function saveCumulativeForNextLevel() {
+      try {
+        const finalForThisLevel = baseScore + score;
+        localStorage.setItem('neonDashCumulativeScore', String(finalForThisLevel));
+        localStorage.setItem('neonDashCumulativeNeon', String(neonScore));
+      } catch(e){}
+    }
+
+    function init() {
+      loadBest();
+      // L1 starts a campaign: zero bases so a fresh visit does not inherit an old run
+      baseScore = 0;
+      neonAtLevelStart = 0;
+      try {
+        localStorage.setItem('neonDashCumulativeScore', '0');
+        localStorage.setItem('neonDashCumulativeNeon', '0');
+      } catch(e){}
+      initStars();
+      resetGame();
+      updateLevel2LinkVisibility();
+
+      // keyboard
+      window.addEventListener('keydown', (e) => {
+        keys[e.key] = true;
+        getAudioCtx();
+
+        if (e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault();
+          if (gameState !== 'playing') {
+            startPlaying();
+          }
+        }
+        if (e.key === 'm' || e.key === 'M') {
+          toggleMute();
+        }
+        if ((e.key === 'r' || e.key === 'R') && (gameState === 'over' || gameState === 'complete')) {
+          resetGame();
+          gameState = 'playing';
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        keys[e.key] = false;
+      });
+
+      // mouse / touch start
+      canvas.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        startPlaying();
+      });
+      canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        startPlaying();
+      }, { passive: false });
+
+      // prevent space from scrolling page
+      window.addEventListener('keydown', (e) => {
+        if (e.key === ' ' && document.activeElement === document.body) {
+          e.preventDefault();
+        }
+      });
+
+      // Persist cumulative distance + neon when advancing to Level 2
+      const nextLinkEl = document.getElementById('level2-link');
+      if (nextLinkEl) {
+        nextLinkEl.addEventListener('click', saveCumulativeForNextLevel);
+      }
+
+      // initial draw
+      draw();
+
+      // kick off loop
+      gameLoop();
+
+      // subtle console note
+      console.log('%c[NEON DASH] Arrow keys / A D to move, Space to jump. Avoid the red triangles.', 'color:#334455');
+    }
+
+    // boot
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
