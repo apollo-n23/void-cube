@@ -2,7 +2,7 @@
 
 HTML5 canvas side-scroller. The six-level run is **Neon Dash**: gravity cube, neon orbs, exit ladders, Web Audio SFX plus looping WAV beds. No build step.
 
-This game used to live alongside the POPCORN Prompt Synthesizer in [apollo-n23/to-understand](https://github.com/apollo-n23/to-understand). Level pages use **← HOME** to return to this hub.
+This game used to live alongside the POPCORN Prompt Synthesizer in [apollo-n23/to-understand](https://github.com/apollo-n23/to-understand). Level pages use **← HOME** to return to the game picker.
 
 ## Run locally
 
@@ -12,15 +12,16 @@ Static files only. From the repo root:
 python -m http.server 5173
 ```
 
-Then open [http://127.0.0.1:5173/](http://127.0.0.1:5173/) for the hub, or open a level HTML file directly.
+Then open [http://127.0.0.1:5173/](http://127.0.0.1:5173/) to pick a game, or open a level HTML file directly.
 
-The hub plays a muted looping 30s cinematic above the world select. Levels 1 and 2 start a quiet looping bed on the first click or keypress. **M** mutes SFX and music.
+The root page chooses between Void Cube and Sigma Ninja. Void Cube's world select (`neon-worlds.html`) plays a muted looping 30s cinematic over `ThemeSong.wav`. Levels 1 and 2 start a quiet looping bed on the first click or keypress. **M** mutes SFX and music.
 
 ## Files
 
 | Path | What it is |
 |---|---|
-| `index.html` | Void Cube hub — cinematic, play Level 1, jump to any world |
+| `index.html` | Game picker — Void Cube or Sigma Ninja |
+| `neon-worlds.html` | Void Cube hub — cinematic, play Level 1, jump to any world |
 | `void-cube.html` | Level 1 (Void) — loops `assets/audio/L1-BG.wav` |
 | `level2.html` | Level 2 (Mr Octopoop) — loops `assets/audio/L2-BG.wav` |
 | `Level3.html` | Level 3 (Industrial) |
@@ -35,6 +36,9 @@ The hub plays a muted looping 30s cinematic above the world select. Levels 1 and
 | `tests/nav-ui.test.js` | Below-canvas level nav + chrome plates |
 | `tests/speech-ui.test.js` | Octopoop speech bubbles vs in-canvas help boxes |
 | `tests/sprite-wiring.txt` | Last sprite-wiring check log |
+| `sigma-ninja.html` | Sigma Ninja village. Story choices that happen in the world pin a **mission** at the top of the stage (e.g. click “Walk to the inn…” → **Enter the inn**); they do not teleport you. Walk to the inn door and press **E** to enter. Inside, the wall stays visible above a room-sized floor; talk to the bartender with **E**. The red scout starts in the plaza, walks a loop, and attacks if you get close; the player has **6 HP** and **R** restarts after game over. Space kills the scout. |
+| `assets/sigma-ninja/` | Village sprites, walk cycles, inn wall/floor, bartender NPC, and `sigma-ninja.js` |
+| `tests/sigma-ninja.test.js` | Village movement, missions, inn door zone, bartender, enter/leave, sprites |
 | `sound-design-bible.md` | Canonical Web Audio SFX, mute, and BGM rules |
 | `vercel.json` | Minimal static config |
 
@@ -47,4 +51,5 @@ node tests/neon-mechanics.test.js
 node tests/sprite-wiring-check.js
 node tests/nav-ui.test.js
 node tests/speech-ui.test.js
+node tests/sigma-ninja.test.js
 ```

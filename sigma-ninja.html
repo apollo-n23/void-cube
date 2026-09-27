@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sigma Ninja</title>
+  <link rel="stylesheet" href="assets/neon/chrome.css">
+  <style>
+    body {
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(8, 10, 16, 0.35) 0%, rgba(8, 10, 16, 0.82) 100%),
+        url("assets/sigma-ninja/sky.jpg") center top / cover no-repeat fixed,
+        #1a2430;
+    }
+
+    .sn-wrap {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    .sn-stage {
+      width: 960px;
+      height: 520px;
+      margin: 0 auto;
+      position: relative;
+      overflow: hidden;
+      perspective: 640px;
+      perspective-origin: 50% 42%;
+      border: 1px solid rgba(92, 232, 255, 0.28);
+      box-shadow: 0 0 0 1px rgba(4, 16, 24, 0.8), 0 0 18px rgba(0, 190, 255, 0.16);
+      background-color: #7aa0b8;
+      background-image: url("assets/sigma-ninja/sky.jpg");
+      background-position: center top;
+      background-repeat: no-repeat;
+      background-size: cover;
+      outline: none;
+    }
+
+    .sn-hills {
+      position: absolute;
+      left: -12%;
+      top: -10px;
+      width: 124%;
+      height: 280px;
+      background-image: url("assets/sigma-ninja/hills.jpg");
+      background-position: center bottom;
+      background-repeat: no-repeat;
+      background-size: cover;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .sn-stage.scene-inn {
+      background-color: #2a1810;
+      background-image: none;
+    }
+
+    .sn-inn-wall {
+      display: none;
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 58%;
+      background-image: url("assets/sigma-ninja/inn-wall.jpg");
+      background-position: center top;
+      background-repeat: no-repeat;
+      background-size: cover;
+      pointer-events: none;
+      z-index: 0;
+      box-shadow: inset 0 -28px 36px rgba(42, 24, 16, 0.55);
+    }
+
+    .sn-stage.scene-inn .sn-inn-wall {
+      display: block;
+    }
+
+    .sn-stage.scene-inn .sn-hills,
+    .sn-stage.scene-inn #world {
+      display: none;
+    }
+
+    .sn-stage.scene-inn #inn-world {
+      display: block;
+    }
+
+    .sn-missions {
+      position: absolute;
+      top: 10px;
+      left: 12px;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      pointer-events: none;
+      max-width: 280px;
+    }
+
+    .sn-mission {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #ffe08a;
+      background: rgba(4, 16, 24, 0.86);
+      border: 1px solid rgba(155, 232, 255, 0.45);
+      box-shadow: 0 0 0 1px rgba(4, 16, 24, 0.8), 0 0 12px rgba(0, 190, 255, 0.18);
+      padding: 7px 10px 8px;
+    }
+
+    .sn-mission-kicker {
+      display: block;
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: #9be8ff;
+      margin-bottom: 2px;
+    }
+
+    .sn-world {
+      position: absolute;
+      left: 0;
+      top: 96px;
+      width: 1920px;
+      height: 900px;
+      transform-style: preserve-3d;
+      transform-origin: 480px 0;
+      transform: rotateX(54deg);
+      z-index: 1;
+    }
+
+    #inn-world {
+      display: none;
+      position: absolute;
+      left: 0;
+      top: 248px;
+      width: 960px;
+      height: 300px;
+      transform-style: preserve-3d;
+      transform-origin: 480px 0;
+      transform: rotateX(42deg);
+      z-index: 1;
+    }
+
+    .sn-inn-floor {
+      position: absolute;
+      left: 90px;
+      top: 8px;
+      width: 780px;
+      height: 300px;
+      background-image: url("assets/sigma-ninja/inn-floor.jpg");
+      background-repeat: repeat;
+      background-size: 180px 180px;
+      box-shadow: 0 0 0 10px #24140e, 0 18px 28px rgba(8, 4, 2, 0.45);
+    }
+
+    .sn-ground {
+      position: absolute;
+      left: -400px;
+      top: -120px;
+      width: 2800px;
+      height: 1400px;
+      background-image: url("assets/sigma-ninja/ground.jpg");
+      background-repeat: repeat;
+      background-size: 280px 280px;
+      transform: translateZ(0);
+    }
+
+    .sn-billboard {
+      position: absolute;
+      transform-origin: 50% 100%;
+      background-repeat: no-repeat;
+      background-position: bottom center;
+      background-size: contain;
+      pointer-events: none;
+    }
+
+    .sn-label {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      transform: translate(-50%, 0);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #fff6d8;
+      background: rgba(40, 12, 8, 0.72);
+      padding: 3px 8px;
+      text-shadow: 0 1px 0 #3a1a0a;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    #player,
+    #enemy {
+      z-index: 80;
+      overflow: visible;
+      background-image: none;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      opacity: 1;
+    }
+
+    #player .sn-sprite,
+    #enemy .sn-sprite {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: bottom center;
+      pointer-events: none;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+
+    #enemy {
+      filter: drop-shadow(0 3px 8px rgba(80, 0, 0, 0.65));
+    }
+
+    #player.is-hurt {
+      filter: drop-shadow(0 0 10px #ff2a2a) drop-shadow(0 0 18px #ff4d6d);
+    }
+
+    #player.is-hurt .sn-sprite {
+      filter: brightness(1.4) sepia(1) saturate(10) hue-rotate(-30deg);
+    }
+
+    .sn-pad {
+      position: relative;
+      margin: 10px 12px 0 auto;
+      width: max-content;
+      display: grid;
+      grid-template-columns: 44px 44px 44px;
+      grid-template-rows: 44px 44px;
+      gap: 4px;
+      z-index: 5;
+    }
+
+    .sn-pad button {
+      cursor: pointer;
+      font: inherit;
+      font-size: 16px;
+      font-weight: 700;
+      color: #041018;
+      background: #9be8ff;
+      border: 0;
+      box-shadow: 0 0 0 2px rgba(4, 16, 24, 0.8);
+    }
+
+    .sn-pad button:active,
+    .sn-pad button.is-down {
+      background: #ffe08a;
+    }
+
+    .sn-pad .sn-pad-up { grid-column: 2; grid-row: 1; }
+    .sn-pad .sn-pad-left { grid-column: 1; grid-row: 2; }
+    .sn-pad .sn-pad-down { grid-column: 2; grid-row: 2; }
+    .sn-pad .sn-pad-right { grid-column: 3; grid-row: 2; }
+
+    .sn-hp {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      z-index: 50;
+      display: flex;
+      gap: 5px;
+      pointer-events: none;
+      padding: 7px 8px;
+      background: rgba(4, 16, 24, 0.86);
+      border: 1px solid rgba(155, 232, 255, 0.45);
+      box-shadow: 0 0 0 1px rgba(4, 16, 24, 0.8);
+    }
+
+    .sn-hp-pip {
+      width: 16px;
+      height: 10px;
+      background: #3a1218;
+      box-shadow: inset 0 0 0 1px rgba(255, 224, 138, 0.25);
+    }
+
+    .sn-hp-pip.is-on {
+      background: #ff4d6d;
+      box-shadow: 0 0 8px rgba(255, 77, 109, 0.45);
+    }
+
+    .sn-gameover {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 80;
+      background: rgba(4, 8, 14, 0.78);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      text-align: center;
+      pointer-events: auto;
+    }
+
+    .sn-gameover.is-on {
+      display: flex;
+    }
+
+    .sn-gameover h2 {
+      font-size: 28px;
+      letter-spacing: 8px;
+      text-transform: uppercase;
+      color: #ff4d6d;
+      margin-bottom: 10px;
+    }
+
+    .sn-gameover p {
+      font-size: 13px;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+      color: #d4f4ff;
+    }
+
+    .sn-story {
+      max-width: 960px;
+      margin: 12px auto 0;
+      padding: 14px 16px 16px;
+      background: #041018;
+      border: 1px solid rgba(92, 232, 255, 0.28);
+      box-shadow: 0 0 0 1px rgba(4, 16, 24, 0.8);
+    }
+
+    .sn-story h2 {
+      font-size: 13px;
+      letter-spacing: 2.4px;
+      text-transform: uppercase;
+      color: #9be8ff;
+      margin-bottom: 8px;
+    }
+
+    .sn-story p {
+      font-size: 14px;
+      line-height: 1.45;
+      color: #d4f4ff;
+      margin-bottom: 12px;
+    }
+
+    .sn-choices {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .sn-choices button {
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      letter-spacing: 0.6px;
+      color: #041018;
+      background: #9be8ff;
+      border: 0;
+      padding: 10px 14px;
+    }
+
+    .sn-choices button:hover {
+      background: #ff8ae8;
+      color: #041018;
+    }
+
+    .sn-choices button.is-mission {
+      background: #ffe08a;
+      color: #041018;
+    }
+
+    .sn-choices button.is-mission:hover {
+      background: #ff8ae8;
+    }
+
+    .sn-hint {
+      margin-top: 10px;
+      font-size: 11px;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      color: #7aa8c0;
+    }
+
+    .sn-interact {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      z-index: 40;
+      display: none;
+      pointer-events: none;
+    }
+
+    .sn-interact.is-on {
+      display: block;
+      pointer-events: auto;
+    }
+
+    .sn-interact.is-hint {
+      bottom: auto;
+      transform: translate(-50%, -110%);
+    }
+
+    .sn-interact button {
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+      color: #ffe08a;
+      background: rgba(4, 16, 24, 0.86);
+      border: 1px solid rgba(155, 232, 255, 0.5);
+      padding: 8px 14px;
+      box-shadow: 0 0 0 1px rgba(4, 16, 24, 0.85), 0 0 14px rgba(0, 190, 255, 0.22);
+      white-space: nowrap;
+    }
+
+    .sn-interact button:hover {
+      background: #ffe08a;
+      color: #041018;
+    }
+
+    @media (max-width: 980px) {
+      .sn-stage { width: 100%; max-width: 960px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="index.html" class="back-link">← HOME</a>
+    <div class="page-title">SIGMA NINJA <span>LEVEL 1 • LANTERN VILLAGE</span></div>
+  </div>
+
+  <div class="sn-wrap">
+    <div id="stage" class="sn-stage" width="960" height="520" tabindex="0">
+      <div id="missions" class="sn-missions" aria-live="polite"></div>
+      <div id="hills" class="sn-hills"></div>
+      <div id="inn-wall" class="sn-inn-wall"></div>
+      <div id="world" class="sn-world">
+        <div class="sn-ground"></div>
+      </div>
+      <div id="inn-world">
+        <div class="sn-inn-floor"></div>
+      </div>
+      <div id="interact" class="sn-interact">
+        <button id="interact-btn" type="button">Press E to enter</button>
+      </div>
+      <div id="hp" class="sn-hp" aria-label="Health"></div>
+      <div id="game-over" class="sn-gameover">
+        <h2>Game Over</h2>
+        <p>The red scout cut you down.</p>
+        <p>Press R to restart</p>
+      </div>
+    </div>
+    <div id="pad" class="sn-pad" aria-label="Walk">
+      <button type="button" class="sn-pad-up" data-dir="ArrowUp">↑</button>
+      <button type="button" class="sn-pad-left" data-dir="ArrowLeft">←</button>
+      <button type="button" class="sn-pad-down" data-dir="ArrowDown">↓</button>
+      <button type="button" class="sn-pad-right" data-dir="ArrowRight">→</button>
+    </div>
+  </div>
+
+  <section class="sn-story" aria-live="polite">
+    <h2 id="story-title"></h2>
+    <p id="story-text"></p>
+    <div id="story-choices" class="sn-choices"></div>
+    <p class="sn-hint" id="near-hint"></p>
+  </section>
+
+  <div class="info hub-note">
+    <kbd>&larr;</kbd> <kbd>&uarr;</kbd> <kbd>&rarr;</kbd> <kbd>&darr;</kbd> WALK
+    · <kbd>SPACE</kbd> ATTACK
+    · <kbd>E</kbd> ENTER / TALK / LEAVE
+    · <kbd>R</kbd> RESTART
+  </div>
+
+  <script src="assets/sigma-ninja/sigma-ninja.js?v=7"></script>
+  <script>
+    (function () {
+      var SN = window.SigmaNinja;
+      var stage = document.getElementById('stage');
+      var world = document.getElementById('world');
+      var innWorld = document.getElementById('inn-world');
+      var hills = document.getElementById('hills');
+      var interactBox = document.getElementById('interact');
+      var interactBtn = document.getElementById('interact-btn');
+      var storyTitle = document.getElementById('story-title');
+      var storyText = document.getElementById('story-text');
+      var storyChoices = document.getElementById('story-choices');
+      var nearHint = document.getElementById('near-hint');
+      var missionsEl = document.getElementById('missions');
+      var hpEl = document.getElementById('hp');
+      var gameOverEl = document.getElementById('game-over');
+      var session = SN.createSession();
+      var player = session.player;
+      var enemy = session.enemy;
+      var anim = session.anim;
+      var TILT = 54;
+      var INN_TILT = 42;
+      var PLAYER_W = SN.PLAYER_SIZE.w;
+      var PLAYER_H = SN.PLAYER_SIZE.h;
+      var keys = Object.create(null);
+      var lastT = 0;
+      var enemyEl = null;
+      var activeWorld = world;
+
+      function billboardTransform(facing, tilt, lift) {
+        var face = facing < 0 ? ' scaleX(-1)' : '';
+        var t = tilt == null ? TILT : tilt;
+        var z = lift == null ? 2 : lift;
+        return 'rotateX(-' + t + 'deg) translateZ(' + z + 'px)' + face;
+      }
+
+      function placeBillboard(el, x, z, w, h, facing, tilt, lift) {
+        el.style.left = (x - w / 2) + 'px';
+        el.style.top = (z - h) + 'px';
+        el.style.transform = billboardTransform(1, tilt, lift);
+        el.style.zIndex = String(10 + Math.round(z));
+        var img = el.querySelector('img.sn-sprite');
+        if (img) img.style.transform = facing < 0 ? 'scaleX(-1)' : 'none';
+      }
+
+      function setSprite(el, src) {
+        var img = el.querySelector('img.sn-sprite');
+        if (!img) {
+          img = document.createElement('img');
+          img.className = 'sn-sprite';
+          img.alt = '';
+          img.draggable = false;
+          el.appendChild(img);
+        }
+        if (img.getAttribute('data-src') !== src) {
+          img.setAttribute('data-src', src);
+          img.src = src;
+        }
+        el.style.backgroundImage = 'none';
+      }
+
+      function applyCamera() {
+        var camWorld = SN.sceneWorld(session.scene);
+        var cam = SN.cameraOffset(player, SN.VIEWPORT, camWorld);
+        var node = session.scene === 'inn' ? innWorld : world;
+        var topBase = session.scene === 'inn' ? 248 : 96;
+        var tilt = session.scene === 'inn' ? INN_TILT : TILT;
+        node.style.left = (-cam.x) + 'px';
+        node.style.top = (topBase - Math.round(cam.z * 0.42)) + 'px';
+        node.style.transformOrigin = (cam.x + SN.VIEWPORT.w / 2) + 'px 0';
+        node.style.transform = 'rotateX(' + tilt + 'deg)';
+        if (hills) {
+          hills.style.transform = 'translateX(' + (-cam.x * 0.14) + 'px)';
+        }
+      }
+
+      function applyScene() {
+        if (session.scene === 'inn') {
+          stage.className = 'sn-stage scene-inn';
+          activeWorld = innWorld;
+          innWorld.appendChild(playerEl);
+        } else {
+          stage.className = 'sn-stage';
+          activeWorld = world;
+          world.appendChild(playerEl);
+        }
+        renderMissions();
+        renderStory();
+        syncInteract();
+        applyCamera();
+        placePlayer();
+        syncEnemy();
+      }
+
+      function mountLandmarks() {
+        var list = SN.VILLAGE_LANDMARKS;
+        var i;
+        for (i = 0; i < list.length; i++) {
+          var lm = list[i];
+          var el = document.createElement('div');
+          el.className = 'sn-billboard';
+          el.id = 'lm-' + lm.id;
+          el.setAttribute('data-kind', lm.kind);
+          el.style.width = lm.w + 'px';
+          el.style.height = lm.h + 'px';
+          el.style.backgroundImage = 'url("' + lm.src + '")';
+          placeBillboard(el, lm.x, lm.z, lm.w, lm.h);
+          if (lm.kind === 'inn') {
+            var tag = document.createElement('span');
+            tag.className = 'sn-label';
+            tag.textContent = 'Inn';
+            el.appendChild(tag);
+          }
+          world.appendChild(el);
+        }
+      }
+
+      function mountInnFurniture() {
+        var list = SN.INN_FURNITURE;
+        var i;
+        for (i = 0; i < list.length; i++) {
+          var lm = list[i];
+          var el = document.createElement('div');
+          el.className = 'sn-billboard';
+          el.id = 'inn-' + lm.id;
+          el.setAttribute('data-kind', lm.kind);
+          el.style.width = lm.w + 'px';
+          el.style.height = lm.h + 'px';
+          el.style.backgroundImage = 'url("' + lm.src + '")';
+          placeBillboard(el, lm.x, lm.z, lm.w, lm.h, 1, INN_TILT);
+          innWorld.appendChild(el);
+        }
+      }
+
+      function mountInnNpcs() {
+        var list = SN.INN_NPCS;
+        var i;
+        for (i = 0; i < list.length; i++) {
+          var npc = list[i];
+          var el = document.createElement('div');
+          el.className = 'sn-billboard';
+          el.id = 'npc-' + npc.id;
+          el.setAttribute('data-kind', npc.kind);
+          el.style.width = npc.w + 'px';
+          el.style.height = npc.h + 'px';
+          el.style.backgroundImage = 'url("' + npc.src + '")';
+          placeBillboard(el, npc.x, npc.z, npc.w, npc.h, 1, INN_TILT);
+          el.style.zIndex = String(420 + Math.round(npc.z));
+          if (npc.id === 'bartender') {
+            var tag = document.createElement('span');
+            tag.className = 'sn-label';
+            tag.textContent = 'Bartender';
+            el.appendChild(tag);
+          }
+          innWorld.appendChild(el);
+        }
+      }
+
+      function mountEnemy() {
+        enemyEl = document.createElement('div');
+        enemyEl.id = 'enemy';
+        enemyEl.className = 'sn-billboard';
+        enemyEl.setAttribute('data-kind', 'enemy');
+        enemyEl.style.width = enemy.w + 'px';
+        enemyEl.style.height = enemy.h + 'px';
+        setSprite(enemyEl, enemy.src);
+        var scoutTag = document.createElement('span');
+        scoutTag.className = 'sn-label';
+        scoutTag.textContent = 'Scout';
+        enemyEl.appendChild(scoutTag);
+        world.appendChild(enemyEl);
+        placeBillboard(enemyEl, enemy.x, enemy.z, enemy.w, enemy.h, 1, TILT, 36);
+        enemyEl.style.zIndex = String(500 + Math.round(enemy.z));
+        syncEnemyLabel();
+      }
+
+      function syncEnemyLabel() {
+        if (!enemyEl) return;
+        var tag = enemyEl.querySelector('.sn-label');
+        if (!tag) return;
+        tag.style.transform = 'translate(-50%, 0)';
+      }
+
+      function syncEnemy() {
+        if (!enemyEl) return;
+        if (enemy.dead || session.scene !== 'village') {
+          enemyEl.style.display = 'none';
+          enemyEl.setAttribute('data-dead', '1');
+        } else {
+          enemyEl.style.display = '';
+          enemyEl.removeAttribute('data-dead');
+          setSprite(enemyEl, SN.enemySpriteForAnim(enemy));
+          placeBillboard(enemyEl, enemy.x, enemy.z, enemy.w, enemy.h, enemy.anim ? enemy.anim.facing : 1, TILT, 36);
+          enemyEl.style.zIndex = String(500 + Math.round(enemy.z));
+          syncEnemyLabel();
+        }
+      }
+
+      function renderHp() {
+        var max = SN.PLAYER_MAX_HP;
+        var hp = player && player.hp != null ? player.hp : max;
+        if (hpEl.childNodes.length !== max) {
+          hpEl.innerHTML = '';
+          var i;
+          for (i = 0; i < max; i++) {
+            var pip = document.createElement('span');
+            pip.className = 'sn-hp-pip';
+            hpEl.appendChild(pip);
+          }
+        }
+        var n;
+        for (n = 0; n < hpEl.childNodes.length; n++) {
+          hpEl.childNodes[n].className = n < hp ? 'sn-hp-pip is-on' : 'sn-hp-pip';
+        }
+      }
+
+      function renderGameOver() {
+        gameOverEl.className = session.gameOver ? 'sn-gameover is-on' : 'sn-gameover';
+      }
+
+      function restartGame() {
+        session = SN.createSession();
+        player = session.player;
+        enemy = session.enemy;
+        anim = session.anim;
+        keys = Object.create(null);
+        lastT = 0;
+        world.appendChild(playerEl);
+        renderGameOver();
+        renderHp();
+        applyScene();
+        syncEnemy();
+      }
+
+      var playerEl = document.createElement('div');
+      playerEl.id = 'player';
+      playerEl.className = 'sn-billboard';
+      playerEl.style.width = PLAYER_W + 'px';
+      playerEl.style.height = PLAYER_H + 'px';
+      setSprite(playerEl, SN.PLAYER_SPRITE);
+      world.appendChild(playerEl);
+
+      function positionHintOverPlayer() {
+        var stageRect = stage.getBoundingClientRect();
+        var pRect = playerEl.getBoundingClientRect();
+        var x = pRect.left + pRect.width / 2 - stageRect.left;
+        var y = pRect.top - stageRect.top;
+        if (x < 70) x = 70;
+        if (x > stageRect.width - 70) x = stageRect.width - 70;
+        if (y < 28) y = 28;
+        interactBox.style.left = x + 'px';
+        interactBox.style.top = y + 'px';
+      }
+
+      function syncInteract() {
+        var prompt = SN.interactPrompt(session);
+        if (!prompt) {
+          interactBox.className = 'sn-interact';
+          interactBox.style.left = '';
+          interactBox.style.top = '';
+          return;
+        }
+        interactBtn.textContent = prompt.label;
+        interactBtn.setAttribute('data-action', prompt.action);
+        if (prompt.action === 'enter') {
+          interactBox.className = 'sn-interact is-on is-hint';
+          positionHintOverPlayer();
+        } else {
+          interactBox.className = 'sn-interact is-on';
+          interactBox.style.left = '';
+          interactBox.style.top = '';
+        }
+      }
+
+      function doInteract() {
+        if (!SN.useInteract(session)) return;
+        applyScene();
+      }
+
+      function placePlayer() {
+        setSprite(playerEl, SN.playerSpriteForAnim(anim));
+        placeBillboard(playerEl, player.x, player.z, PLAYER_W, PLAYER_H, anim.facing, session.scene === 'inn' ? INN_TILT : TILT, 24);
+        playerEl.style.zIndex = String(800 + Math.round(player.z));
+        if (player.hurtTime > 0) {
+          if (playerEl.className.indexOf('is-hurt') < 0) playerEl.className += ' is-hurt';
+        } else {
+          playerEl.className = 'sn-billboard';
+        }
+        syncInteract();
+        if (session.scene === 'inn') {
+          if (SN.nearBartender(player)) nearHint.textContent = 'Press E to talk';
+          else if (SN.nearInnExit(player)) nearHint.textContent = 'Press E to leave';
+          else nearHint.textContent = '';
+          return;
+        }
+        if (SN.atInnDoor(session)) {
+          nearHint.textContent = 'Press E to enter';
+        } else {
+          nearHint.textContent = '';
+        }
+      }
+
+      function renderMissions() {
+        var list = SN.activeMissions(session);
+        missionsEl.innerHTML = '';
+        var i;
+        for (i = 0; i < list.length; i++) {
+          var card = document.createElement('div');
+          card.className = 'sn-mission';
+          card.setAttribute('data-mission', list[i].id);
+          var kicker = document.createElement('span');
+          kicker.className = 'sn-mission-kicker';
+          kicker.textContent = 'Mission';
+          card.appendChild(kicker);
+          card.appendChild(document.createTextNode(list[i].title));
+          missionsEl.appendChild(card);
+        }
+      }
+
+      function renderStory() {
+        var node = SN.getStoryNode(session.storyId);
+        if (!node) return;
+        storyTitle.textContent = node.title;
+        storyText.textContent = node.text;
+        storyChoices.innerHTML = '';
+        var i;
+        for (i = 0; i < node.choices.length; i++) {
+          (function (choice) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = choice.label;
+            btn.setAttribute('data-choice', choice.id);
+            if (choice.mission) {
+              btn.className = 'is-mission';
+              btn.setAttribute('data-mission', choice.mission.id);
+            }
+            btn.addEventListener('click', function () {
+              var result = SN.selectChoice(session, choice.id);
+              if (!result) return;
+              renderMissions();
+              renderStory();
+            });
+            storyChoices.appendChild(btn);
+          })(node.choices[i]);
+        }
+      }
+
+      function onKeyDown(e) {
+        if (e.key === 'r' || e.key === 'R') {
+          if (session.gameOver) {
+            e.preventDefault();
+            restartGame();
+          }
+          return;
+        }
+        if (session.gameOver) return;
+        if (e.key === 'e' || e.key === 'E') {
+          e.preventDefault();
+          doInteract();
+          return;
+        }
+        if (e.key === ' ' || e.code === 'Space') {
+          e.preventDefault();
+          if (!keys[' ']) {
+            keys[' '] = true;
+            if (session.scene === 'village') {
+              SN.handleSpaceBar(player, enemy, anim);
+              syncEnemy();
+            }
+            placePlayer();
+          }
+          return;
+        }
+        var dir = SN.walkDirFromKey(e.key);
+        if (dir) {
+          keys[dir] = true;
+          e.preventDefault();
+          if (dir === 'ArrowLeft') anim.facing = -1;
+          if (dir === 'ArrowRight') anim.facing = 1;
+          var head = SN.headingFromKey(dir);
+          if (head) SN.setHeading(anim, head);
+        }
+      }
+
+      function onKeyUp(e) {
+        if (e.key === ' ' || e.code === 'Space') keys[' '] = false;
+        var dir = SN.walkDirFromKey(e.key);
+        if (dir) keys[dir] = false;
+      }
+
+      function loop(t) {
+        try {
+          var dt = lastT ? Math.min(48, t - lastT) : 16;
+          lastT = t;
+          var moving = false;
+          var step = SN.MOVE_SPEED * dt / 1000;
+          var order = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+          var i;
+          var prevX = player.x;
+          var prevZ = player.z;
+          if (!session.gameOver) {
+            if (keys.ArrowLeft) {
+              anim.facing = -1;
+              SN.setHeading(anim, 'side');
+            } else if (keys.ArrowRight) {
+              anim.facing = 1;
+              SN.setHeading(anim, 'side');
+            } else if (keys.ArrowUp) SN.setHeading(anim, 'back');
+            else if (keys.ArrowDown) SN.setHeading(anim, 'front');
+            for (i = 0; i < order.length; i++) {
+              if (!keys[order[i]]) continue;
+              var next = SN.applyArrowKey(
+                player,
+                order[i],
+                step,
+                SN.sceneBounds(session.scene),
+                SN.sceneObstacles(session.scene)
+              );
+              if (next.x !== player.x || next.z !== player.z) {
+                player.x = next.x;
+                player.z = next.z;
+                moving = true;
+              }
+            }
+          }
+          var dx = player.x - prevX;
+          var dz = player.z - prevZ;
+          var fromMove = SN.headingFromMove(dx, dz);
+          if (fromMove) SN.setHeading(anim, fromMove);
+          var face = SN.facingFromDelta(dx);
+          if (face) anim.facing = face;
+          SN.tickWalk(anim, moving, dt);
+          SN.tickAttack(anim, dt);
+          if (typeof SN.tickEnemy === 'function') SN.tickEnemy(session, dt);
+          applyCamera();
+          placePlayer();
+          syncEnemy();
+          renderHp();
+          renderGameOver();
+        } catch (err) {
+          if (typeof console !== 'undefined' && console.error) console.error(err);
+        }
+        requestAnimationFrame(loop);
+      }
+
+      function bindPad() {
+        var pad = document.getElementById('pad');
+        if (!pad) return;
+        function holdDir(dir, down) {
+          if (!dir) return;
+          keys[dir] = !!down;
+          if (down) {
+            if (dir === 'ArrowLeft') anim.facing = -1;
+            if (dir === 'ArrowRight') anim.facing = 1;
+            var head = SN.headingFromKey(dir);
+            if (head) SN.setHeading(anim, head);
+          }
+        }
+        pad.addEventListener('pointerdown', function (e) {
+          var btn = e.target.closest('button');
+          if (!btn) return;
+          e.preventDefault();
+          stage.focus();
+          btn.className = btn.className + ' is-down';
+          holdDir(btn.getAttribute('data-dir'), true);
+        });
+        function clearPad(e) {
+          var btn = e.target.closest && e.target.closest('button');
+          if (!btn) return;
+          btn.className = btn.className.replace(' is-down', '');
+          holdDir(btn.getAttribute('data-dir'), false);
+        }
+        pad.addEventListener('pointerup', clearPad);
+        pad.addEventListener('pointerleave', clearPad);
+        pad.addEventListener('pointercancel', clearPad);
+      }
+
+      try {
+        mountLandmarks();
+        mountInnFurniture();
+        mountInnNpcs();
+        mountEnemy();
+        applyCamera();
+        placePlayer();
+        renderMissions();
+        renderStory();
+        renderHp();
+        renderGameOver();
+      } catch (err) {
+        if (typeof console !== 'undefined' && console.error) console.error(err);
+      }
+      bindPad();
+      interactBtn.addEventListener('click', function () { doInteract(); });
+      document.addEventListener('keydown', onKeyDown);
+      document.addEventListener('keyup', onKeyUp);
+      stage.addEventListener('click', function () { stage.focus(); });
+      stage.focus();
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>
